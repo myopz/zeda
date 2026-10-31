@@ -424,29 +424,28 @@ function buildPriorityEncoder83(gates: LogicGate[]): ComboCircuit {
   const { inputs, outputs } = ioPins('priority_encoder_8_3')
   const b = createBuilder(gates, 'penc')
 
-  // NOT Ii
-  const n: { id: string; gate: LogicGate }[] = []
-  for (let i = 0; i < 8; i += 1) {
+  // ~Ii only for i=2..7: P7..P1 need higher masks; ~I0/~I1 only served unused P0.
+  const nY: WireEndpoint[] = new Array(8)
+  for (let i = 2; i < 8; i += 1) {
     const g = addGate(b, 'not', 160, 40 + i * ROW, `n${i}`)
     connect(b, io(findPin(inputs, `I${i}`)), gIn(g.id, g.gate, 'A'))
-    n.push(g)
+    nY[i] = gOut(g.id, g.gate, 'Y')
   }
 
-  // Priority one-hots P7..P0
+  // Priority one-hots P7..P1 (P0 unused: Y=000 when only I0 / none higher).
   const P: WireEndpoint[] = new Array(8)
   P[7] = io(findPin(inputs, 'I7'))
-  for (let i = 6; i >= 0; i -= 1) {
+  for (let i = 6; i >= 1; i -= 1) {
     const higherNots: WireEndpoint[] = []
     for (let h = i + 1; h < 8; h += 1) {
-      higherNots.push(gOut(n[h]!.id, n[h]!.gate, 'Y'))
+      higherNots.push(nY[h]!)
     }
-    const masked = andReduce(
+    P[i] = andReduce(
       b,
       [io(findPin(inputs, `I${i}`)), ...higherNots],
       160 + COL,
       40 + (6 - i) * ROW,
     )
-    P[i] = masked
   }
 
   const y2 = orReduce(b, [P[4]!, P[5]!, P[6]!, P[7]!], 160 + COL * 3, 40)
@@ -650,17 +649,19 @@ function build74ls148(gates: LogicGate[]): ComboCircuit {
     I.push(gOut(g.id, g.gate, 'Y'))
   }
 
-  // Priority one-hots on I
-  const n: WireEndpoint[] = []
-  for (let i = 0; i < 8; i += 1) {
+  // Priority one-hots P7..P1; ~Ii only i=2..7 (~I0/~I1 only served unused P0).
+  const nY: WireEndpoint[] = new Array(8)
+  for (let i = 2; i < 8; i += 1) {
     const g = addGate(b, 'not', 120 + COL * 2, 40 + i * ROW, `pn${i}`)
     connect(b, I[i]!, gIn(g.id, g.gate, 'A'))
-    n.push(gOut(g.id, g.gate, 'Y'))
+    nY[i] = gOut(g.id, g.gate, 'Y')
   }
   const P: WireEndpoint[] = new Array(8)
   P[7] = I[7]!
-  for (let i = 6; i >= 0; i -= 1) {
-    P[i] = andReduce(b, [I[i]!, ...n.slice(i + 1)], 120 + COL * 3, 40 + (6 - i) * ROW)
+  for (let i = 6; i >= 1; i -= 1) {
+    const higherNots: WireEndpoint[] = []
+    for (let h = i + 1; h < 8; h += 1) higherNots.push(nY[h]!)
+    P[i] = andReduce(b, [I[i]!, ...higherNots], 120 + COL * 3, 40 + (6 - i) * ROW)
   }
 
   const y2 = orReduce(b, [P[4]!, P[5]!, P[6]!, P[7]!], 120 + COL * 5, 40)

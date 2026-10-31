@@ -6,7 +6,7 @@ import { MODULE_KEYS, type ModuleKey } from '../lib/modules'
 import type { ComboCircuit, CircuitWire, WireEndpoint } from '../types'
 
 /** Bump when gate-level layout spacing changes so IndexedDB seeds re-apply. */
-export const CIRCUIT_LAYOUT_REV = 5
+export const CIRCUIT_LAYOUT_REV = 6
 
 const CIRCUIT_IDS: Record<ModuleKey, string> = {
   half_adder: snowflake.fixed(101),

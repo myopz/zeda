@@ -10,7 +10,7 @@ import {
   type OnSelectionChangeParams,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { LogicGate } from '@/features/logic-gates/types'
 import { createId, cn } from '@/lib/utils'
@@ -24,8 +24,131 @@ import type {
   CircuitWire,
   WireEndpoint,
 } from '../types'
-import { circuitNodeTypes, type DeviceNodeData, type IoNodeData } from './canvasNodes'
+import {
+  circuitNodeTypes,
+  type DeviceNodeData,
+  type IoNodeData,
+  type NodeHighlight,
+} from './canvasNodes'
 import { PALETTE_MIME, type PalettePayload } from './ModulePalette'
+
+/** Selection neighborhood stroke — distinct from sim amber (#f59e0b) / idle slate. */
+const SEL_STROKE = '#6366f1'
+const SEL_STROKE_WIDTH = 3
+const SIM_HIGH_STROKE = '#f59e0b'
+const SIM_IDLE_STROKE = '#94a3b8'
+
+type SelectionNeighborhood = {
+  focusNodeIds: Set<string>
+  neighborNodeIds: Set<string>
+  edgeIds: Set<string>
+}
+
+function selectionNeighborhood(
+  selectedNodeIds: string[],
+  selectedEdgeIds: string[],
+  edges: Edge[],
+): SelectionNeighborhood {
+  const focusNodeIds = new Set(selectedNodeIds)
+  const selectedEdges = new Set(selectedEdgeIds)
+  const neighborNodeIds = new Set<string>()
+  const edgeIds = new Set<string>()
+
+  for (const e of edges) {
+    const fromFocus = focusNodeIds.has(e.source)
+    const toFocus = focusNodeIds.has(e.target)
+    const edgeSelected = selectedEdges.has(e.id)
+    if (!fromFocus && !toFocus && !edgeSelected) continue
+    edgeIds.add(e.id)
+    if (fromFocus || edgeSelected) neighborNodeIds.add(e.target)
+    if (toFocus || edgeSelected) neighborNodeIds.add(e.source)
+  }
+
+  for (const id of focusNodeIds) neighborNodeIds.delete(id)
+
+  return { focusNodeIds, neighborNodeIds, edgeIds }
+}
+
+function nodeHighlightRole(
+  id: string,
+  nh: SelectionNeighborhood,
+): NodeHighlight | undefined {
+  if (nh.focusNodeIds.has(id)) return 'focus'
+  if (nh.neighborNodeIds.has(id)) return 'neighbor'
+  return undefined
+}
+
+function sameIdList(a: string[], b: string[]) {
+  return a.length === b.length && a.every((id, i) => id === b[i])
+}
+
+type EdgeSimData = {
+  baseStroke: string
+  baseStrokeWidth: number
+  baseAnimated: boolean
+}
+
+/** Preserve RF measurement fields — dropping them leaves nodes visibility:hidden. */
+function adoptMeasured(base: Node, prev: Node | undefined): Node {
+  if (!prev) return base
+  return {
+    ...base,
+    position: prev.dragging ? prev.position : base.position,
+    dragging: prev.dragging,
+    width: prev.width,
+    height: prev.height,
+    measured: prev.measured,
+  }
+}
+
+function paintSelection(
+  nodes: Node[],
+  edges: Edge[],
+  selectedNodeIds: string[],
+  selectedEdgeIds: string[],
+): { nodes: Node[]; edges: Edge[] } {
+  const nh = selectionNeighborhood(selectedNodeIds, selectedEdgeIds, edges)
+  const nextNodes = nodes.map((n) => {
+    const highlight = nodeHighlightRole(n.id, nh)
+    const selected = nh.focusNodeIds.has(n.id)
+    const prevHighlight = (n.data as { highlight?: NodeHighlight }).highlight
+    if (prevHighlight === highlight && n.selected === selected) return n
+    return {
+      ...n,
+      selected,
+      data: { ...n.data, highlight },
+    }
+  })
+  const nextEdges = edges.map((e) => {
+    const linked = nh.edgeIds.has(e.id)
+    const edgeSelected = selectedEdgeIds.includes(e.id)
+    const sim = e.data as EdgeSimData | undefined
+    const baseStroke = sim?.baseStroke ?? SIM_IDLE_STROKE
+    const baseStrokeWidth = sim?.baseStrokeWidth ?? 1.5
+    const baseAnimated = sim?.baseAnimated ?? false
+    const stroke = linked ? SEL_STROKE : baseStroke
+    const strokeWidth = linked ? SEL_STROKE_WIDTH : baseStrokeWidth
+    const animated = linked ? false : baseAnimated
+    const zIndex = linked ? 1002 : undefined
+    if (
+      e.selected === edgeSelected &&
+      e.animated === animated &&
+      e.zIndex === zIndex &&
+      e.style?.stroke === stroke &&
+      e.style?.strokeWidth === strokeWidth
+    ) {
+      return e
+    }
+    return {
+      ...e,
+      selected: edgeSelected,
+      animated,
+      zIndex,
+      style: { ...e.style, stroke, strokeWidth },
+    }
+  })
+  return { nodes: nextNodes, edges: nextEdges }
+}
 
 type Props = {
   circuit: ComboCircuit
@@ -52,6 +175,33 @@ function parseFlowNodeId(id: string): WireEndpoint {
   return { nodeId: id, pinId: '' }
 }
 
+/** Match DeviceNode / internals footprints so IO columns clear device AABBs. */
+const DEVICE_W_GATE = 160
+const DEVICE_W_MODULE = 180
+const IO_CARD_W = 72
+const IO_CLEAR_GAP = 96
+const IO_ROW = 96
+const IO_TOP = 40
+const IO_Z = 1000
+
+/** Place input/output port columns outside the device bounding box. */
+function ioColumnXs(nodes: CircuitNode[]): { inX: number; outX: number } {
+  if (nodes.length === 0) {
+    return { inX: 24, outX: 480 }
+  }
+  let minX = Number.POSITIVE_INFINITY
+  let maxRight = Number.NEGATIVE_INFINITY
+  for (const n of nodes) {
+    const w = n.kind === 'module' ? DEVICE_W_MODULE : DEVICE_W_GATE
+    minX = Math.min(minX, n.position.x)
+    maxRight = Math.max(maxRight, n.position.x + w)
+  }
+  return {
+    inX: minX - IO_CARD_W - IO_CLEAR_GAP,
+    outX: maxRight + IO_CLEAR_GAP,
+  }
+}
+
 function buildFlowGraph(
   circuit: ComboCircuit,
   gates: LogicGate[],
@@ -66,6 +216,7 @@ function buildFlowGraph(
     if (g.builtinKey) gateByKey.set(g.builtinKey, g)
   }
 
+  const { inX, outX } = ioColumnXs(circuit.nodes)
   const nodes: Node[] = []
 
   circuit.inputs.forEach((pin, i) => {
@@ -73,7 +224,8 @@ function buildFlowGraph(
     nodes.push({
       id: ioFlowId(pin.id),
       type: 'circuitIo',
-      position: { x: 24, y: 40 + i * 96 },
+      position: { x: inX, y: IO_TOP + i * IO_ROW },
+      zIndex: IO_Z,
       data: {
         role: 'in',
         label: pin.name,
@@ -90,7 +242,8 @@ function buildFlowGraph(
     nodes.push({
       id: ioFlowId(pin.id),
       type: 'circuitIo',
-      position: { x: 1120, y: 40 + i * 96 },
+      position: { x: outX, y: IO_TOP + i * IO_ROW },
+      zIndex: IO_Z,
       data: {
         role: 'out',
         label: pin.name,
@@ -172,6 +325,8 @@ function buildFlowGraph(
       endpointBits?.[endpointKey(w.from)] ??
       endpointBits?.[endpointKey(w.to)]
     const high = bit === 1
+    const baseStroke = high ? SIM_HIGH_STROKE : SIM_IDLE_STROKE
+    const baseStrokeWidth = high ? 2.5 : 1.5
     return {
       id: w.id,
       source,
@@ -179,10 +334,15 @@ function buildFlowGraph(
       sourceHandle: w.from.pinId,
       targetHandle: w.to.pinId,
       style: {
-        stroke: high ? '#f59e0b' : '#94a3b8',
-        strokeWidth: high ? 2.5 : 1.5,
+        stroke: baseStroke,
+        strokeWidth: baseStrokeWidth,
       },
       animated: high,
+      data: {
+        baseStroke,
+        baseStrokeWidth,
+        baseAnimated: high,
+      } satisfies EdgeSimData,
     }
   })
 
@@ -229,13 +389,40 @@ function CanvasInner({
     [circuit, gates, endpointBits, nodeOutBits, moduleLabel, onToggleInput],
   )
 
-  const [nodes, setNodes] = useState<Node[]>(graph.nodes)
-  const [edges, setEdges] = useState<Edge[]>(graph.edges)
+  const [nodes, setNodes] = useState<Node[]>(() =>
+    paintSelection(graph.nodes, graph.edges, [], []).nodes,
+  )
+  const [edges, setEdges] = useState<Edge[]>(() =>
+    paintSelection(graph.nodes, graph.edges, [], []).edges,
+  )
+  const nodesRef = useRef(nodes)
+  const edgesRef = useRef(edges)
+  const selectedRef = useRef(selected)
+  nodesRef.current = nodes
+  edgesRef.current = edges
+  selectedRef.current = selected
 
+  // Rebuild from netlist graph; keep RF measurements so nodes stay visible.
   useEffect(() => {
-    setNodes(graph.nodes)
-    setEdges(graph.edges)
+    const sel = selectedRef.current
+    const prevById = new Map(nodesRef.current.map((n) => [n.id, n]))
+    const adopted = graph.nodes.map((n) => adoptMeasured(n, prevById.get(n.id)))
+    const painted = paintSelection(adopted, graph.edges, sel.nodes, sel.edges)
+    setNodes(painted.nodes)
+    setEdges(painted.edges)
   }, [graph])
+
+  // Selection neighborhood highlight (indigo) without dropping measured sizes.
+  useEffect(() => {
+    const painted = paintSelection(
+      nodesRef.current,
+      edgesRef.current,
+      selected.nodes,
+      selected.edges,
+    )
+    setNodes(painted.nodes)
+    setEdges(painted.edges)
+  }, [selected])
 
   const commitFromGraph = useCallback(
     (nextNodes: Node[], nextEdges: Edge[]) => {
@@ -305,10 +492,13 @@ function CanvasInner({
   }, [commitFromGraph, edges, nodes, readOnly])
 
   const onSelectionChange = useCallback((params: OnSelectionChangeParams) => {
-    setSelected({
-      nodes: params.nodes.map((n) => n.id),
-      edges: params.edges.map((e) => e.id),
-    })
+    const nodeIds = params.nodes.map((n) => n.id)
+    const edgeIds = params.edges.map((e) => e.id)
+    setSelected((prev) =>
+      sameIdList(prev.nodes, nodeIds) && sameIdList(prev.edges, edgeIds)
+        ? prev
+        : { nodes: nodeIds, edges: edgeIds },
+    )
   }, [])
 
   const onNodeDoubleClick = useCallback(

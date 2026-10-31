@@ -4,6 +4,9 @@ import type { LogicGate } from '@/features/logic-gates/types'
 import { cn } from '@/lib/utils'
 import type { Bit } from '../types'
 
+/** Selection neighborhood role — distinct from sim amber/emerald. */
+export type NodeHighlight = 'focus' | 'neighbor'
+
 export type IoNodeData = {
   role: 'in' | 'out'
   label: string
@@ -11,6 +14,7 @@ export type IoNodeData = {
   bit?: Bit
   /** Click input pin to toggle simulation level */
   onToggle?: () => void
+  highlight?: NodeHighlight
 }
 
 export type DeviceNodeData = {
@@ -22,6 +26,17 @@ export type DeviceNodeData = {
   drillable?: boolean
   inputBits?: Record<string, Bit>
   outputBits?: Record<string, Bit>
+  highlight?: NodeHighlight
+}
+
+function highlightClass(highlight: NodeHighlight | undefined) {
+  if (highlight === 'focus') {
+    return 'border-indigo-500 ring-2 ring-indigo-500/80 bg-indigo-500/10'
+  }
+  if (highlight === 'neighbor') {
+    return 'border-indigo-400/80 ring-2 ring-indigo-400/50 bg-indigo-500/5'
+  }
+  return undefined
 }
 
 function bitClass(bit: Bit | undefined, role: 'in' | 'out') {
@@ -45,6 +60,7 @@ export function IoNode({ data }: NodeProps) {
       className={cn(
         'rounded-md border bg-card px-3 py-2 text-xs shadow-sm',
         bitClass(d.bit, d.role),
+        highlightClass(d.highlight),
         toggleable && 'cursor-pointer select-none hover:brightness-95 active:scale-[0.98]',
       )}
       onClick={(e) => {
@@ -88,6 +104,7 @@ export function DeviceNode({ data }: NodeProps) {
       className={cn(
         'relative rounded-md border bg-card px-1.5 py-1 text-xs shadow-sm',
         d.drillable && 'cursor-pointer hover:border-primary/50',
+        highlightClass(d.highlight),
       )}
       style={{ minWidth: 160, width: 160 }}
       title={d.drillable ? 'Double-click to inspect internals' : undefined}
