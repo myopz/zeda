@@ -355,10 +355,24 @@ export function LogicGateListPage() {
                 to={`/lgc/${gate.id}`}
                 className={cn(
                   'rounded-lg border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-muted/30',
+                  selected.has(gate.id) && 'border-primary/50 bg-muted/20',
                 )}
               >
                 <div className="mb-3 flex items-start justify-between gap-2">
-                  <GateSymbol gate={gate} width={96} height={64} />
+                  <div
+                    className="pt-0.5"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                    }}
+                  >
+                    <Checkbox
+                      checked={selected.has(gate.id)}
+                      onCheckedChange={(v) => toggleSelect(gate.id, v === true)}
+                      aria-label={gate.name}
+                    />
+                  </div>
+                  <GateSymbol gate={gate} width={96} height={64} className="min-w-0 flex-1" />
                   <Badge variant={gate.kind === 'builtin' ? 'secondary' : 'outline'}>
                     {gate.kind === 'builtin' ? t('gates.builtin') : t('gates.custom')}
                   </Badge>
@@ -368,7 +382,13 @@ export function LogicGateListPage() {
                   {t('gates.inputs')}: {gate.inputs.length} · {t('gates.outputs')}:{' '}
                   {gate.outputs.length}
                 </div>
-                <div className="mt-3 flex gap-1" onClick={(e) => e.stopPropagation()}>
+                <div
+                  className="mt-3 flex gap-1"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                  }}
+                >
                   <Button
                     type="button"
                     size="sm"

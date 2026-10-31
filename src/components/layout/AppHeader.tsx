@@ -30,8 +30,8 @@ export function AppHeader() {
     <header className="flex h-12 items-center justify-between gap-3 border-b bg-background/80 px-3 backdrop-blur sm:px-4">
       <div className="flex min-w-0 items-center gap-2.5">
         <ZedaLogo title={t('app.name')} />
-        <div className="min-w-0">
-          <div className="truncate text-sm font-semibold sm:text-base">{t('app.name')}</div>
+        <div className="flex min-w-0 items-baseline gap-2">
+          <div className="shrink-0 text-lg font-semibold sm:text-xl">{t('app.name')}</div>
           <div className="hidden truncate text-xs text-muted-foreground sm:block">
             {t('app.tagline')}
           </div>
