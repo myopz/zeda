@@ -2,23 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { evaluateOutputs } from '../lib/bool-engine'
 import type { Bit, LogicGate } from '../types'
 import { GateSymbol } from './GateSymbol'
 
 type Props = {
   gate: LogicGate
   className?: string
-}
-
-function lookupOutput(gate: LogicGate, inputs: Record<string, Bit>): Record<string, Bit> {
-  const row = gate.truthTable.find((r) =>
-    gate.inputs.every((pin) => r[pin.id] === inputs[pin.id]),
-  )
-  const out: Record<string, Bit> = {}
-  for (const o of gate.outputs) {
-    out[o.id] = row?.[o.id] ?? 0
-  }
-  return out
 }
 
 export function SimCanvas({ gate, className }: Props) {
@@ -37,7 +27,7 @@ export function SimCanvas({ gate, className }: Props) {
     setInputs(initial)
   }, [initial])
 
-  const outputs = lookupOutput(gate, inputs)
+  const outputs = evaluateOutputs(gate, inputs)
 
   return (
     <div className={cn('rounded-lg border bg-card p-4', className)}>

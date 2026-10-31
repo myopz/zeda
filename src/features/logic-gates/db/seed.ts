@@ -1,12 +1,6 @@
 import { createId } from '@/lib/utils'
 import { snowflake } from '@/lib/snowflake'
-import {
-  applyFormulaToTable,
-  createEmptyGateTable,
-  formulaFromTruthTable,
-  generateInputCombinations,
-} from '../lib/bool-engine'
-import type { Bit, BuiltinKey, LogicGate } from '../types'
+import type { BuiltinKey, LogicGate } from '../types'
 
 function pin(name: string, id?: string) {
   return { id: id ?? createId(), name }
@@ -45,22 +39,27 @@ export const LEGACY_GATE_IDS = [
 
 const KEY_ORDER: BuiltinKey[] = ['and', 'or', 'not', 'nand', 'nor', 'xor', 'xnor']
 
+const BUILTIN_FORMULAS: Record<BuiltinKey, string> = {
+  and: 'A AND B',
+  or: 'A OR B',
+  not: 'NOT A',
+  nand: 'NOT (A AND B)',
+  nor: 'NOT (A OR B)',
+  xor: 'A XOR B',
+  xnor: 'A XNOR B',
+}
+
 function buildBuiltin(
   key: BuiltinKey,
   name: string,
   description: string,
   inputNames: string[],
-  compute: (bits: Bit[]) => Bit,
 ): LogicGate {
   const id = BUILTIN_IDS[key]
   const base = (KEY_ORDER.indexOf(key) + 1) * 100
   const inputs = inputNames.map((n, i) => pin(n, snowflake.fixed(base + i + 1)))
   const outputs = [pin('Y', snowflake.fixed(base + 50))]
   const outId = outputs[0]!.id
-  const truthTable = generateInputCombinations(inputs).map((row) => {
-    const bits = inputs.map((p) => row[p.id]!)
-    return { ...row, [outId]: compute(bits) }
-  })
   const now = Date.now()
   return {
     id,
@@ -70,9 +69,8 @@ function buildBuiltin(
     builtinKey: key,
     inputs,
     outputs,
-    truthTable,
     formulas: {
-      [outId]: formulaFromTruthTable(truthTable, inputs, outId),
+      [outId]: BUILTIN_FORMULAS[key],
     },
     createdAt: now,
     updatedAt: now,
@@ -90,8 +88,6 @@ export function createAoiExampleGate(): LogicGate {
   const outputs = [pin('Y', snowflake.fixed(850))]
   const outId = outputs[0]!.id
   const formula = 'NOT ((A AND B) OR (C AND D))'
-  const base = createEmptyGateTable(inputs, outputs)
-  const truthTable = applyFormulaToTable(base, inputs, outId, formula)
   const now = Date.now()
   return {
     id: AOI_ID,
@@ -100,7 +96,6 @@ export function createAoiExampleGate(): LogicGate {
     kind: 'custom',
     inputs,
     outputs,
-    truthTable,
     formulas: { [outId]: formula },
     createdAt: now,
     updatedAt: now,
@@ -109,13 +104,13 @@ export function createAoiExampleGate(): LogicGate {
 
 export function createBuiltinGates(): LogicGate[] {
   return [
-    buildBuiltin('and', 'AND', '2-input AND gate', ['A', 'B'], ([a, b]) => ((a! & b!) as Bit)),
-    buildBuiltin('or', 'OR', '2-input OR gate', ['A', 'B'], ([a, b]) => ((a! | b!) as Bit)),
-    buildBuiltin('not', 'NOT', '1-input NOT gate', ['A'], ([a]) => ((1 - a!) as Bit)),
-    buildBuiltin('nand', 'NAND', '2-input NAND gate', ['A', 'B'], ([a, b]) => ((1 - (a! & b!)) as Bit)),
-    buildBuiltin('nor', 'NOR', '2-input NOR gate', ['A', 'B'], ([a, b]) => ((1 - (a! | b!)) as Bit)),
-    buildBuiltin('xor', 'XOR', '2-input XOR gate', ['A', 'B'], ([a, b]) => ((a! ^ b!) as Bit)),
-    buildBuiltin('xnor', 'XNOR', '2-input XNOR gate', ['A', 'B'], ([a, b]) => ((1 - (a! ^ b!)) as Bit)),
+    buildBuiltin('and', 'AND', '2-input AND gate', ['A', 'B']),
+    buildBuiltin('or', 'OR', '2-input OR gate', ['A', 'B']),
+    buildBuiltin('not', 'NOT', '1-input NOT gate', ['A']),
+    buildBuiltin('nand', 'NAND', '2-input NAND gate', ['A', 'B']),
+    buildBuiltin('nor', 'NOR', '2-input NOR gate', ['A', 'B']),
+    buildBuiltin('xor', 'XOR', '2-input XOR gate', ['A', 'B']),
+    buildBuiltin('xnor', 'XNOR', '2-input XNOR gate', ['A', 'B']),
   ]
 }
 
@@ -127,7 +122,6 @@ export function createSeedGates(): LogicGate[] {
 export function createBlankCustomGate(name: string): LogicGate {
   const inputs = [pin('A'), pin('B')]
   const outputs = [pin('Y')]
-  const truthTable = createEmptyGateTable(inputs, outputs)
   const now = Date.now()
   const outId = outputs[0]!.id
   return {
@@ -137,7 +131,6 @@ export function createBlankCustomGate(name: string): LogicGate {
     kind: 'custom',
     inputs,
     outputs,
-    truthTable,
     formulas: { [outId]: '0' },
     createdAt: now,
     updatedAt: now,

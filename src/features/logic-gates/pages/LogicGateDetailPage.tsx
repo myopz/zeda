@@ -14,15 +14,9 @@ import { GateSymbol } from '../components/GateSymbol'
 import { SimCanvas } from '../components/SimCanvas'
 import { TruthTableEditor } from '../components/TruthTableEditor'
 import { getGate, updateGate } from '../db/repository'
-import {
-  applyFormulaToTable,
-  FormulaError,
-  rebuildFormulasFromTruthTable,
-  resizeTruthTable,
-  defaultPinName,
-} from '../lib/bool-engine'
+import { FormulaError, defaultPinName, parseFormula } from '../lib/bool-engine'
 import { useHistoryState } from '../lib/history'
-import type { Bit, GatePin, LogicGate } from '../types'
+import type { GatePin, LogicGate } from '../types'
 
 type Draft = LogicGate
 
@@ -30,6 +24,24 @@ function renamePins(count: number, kind: 'in' | 'out', prev: GatePin[]): GatePin
   const next: GatePin[] = []
   for (let i = 0; i < count; i += 1) {
     next.push(prev[i] ?? { id: createId('pin'), name: defaultPinName(i, kind) })
+  }
+  return next
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function renameInFormulas(
+  formulas: Record<string, string>,
+  from: string,
+  to: string,
+): Record<string, string> {
+  if (from === to) return formulas
+  const re = new RegExp(`\\b${escapeRegExp(from)}\\b`, 'g')
+  const next: Record<string, string> = {}
+  for (const [id, src] of Object.entries(formulas)) {
+    next[id] = src.replace(re, to)
   }
   return next
 }
@@ -73,69 +85,53 @@ export function LogicGateDetailPage() {
     setFormulaError(null)
   }
 
-  const onToggleOutput = (rowIndex: number, outputId: string) => {
-    if (!gate || readOnly) return
-    const truthTable = gate.truthTable.map((row, i) =>
-      i === rowIndex
-        ? { ...row, [outputId]: (row[outputId] === 1 ? 0 : 1) as Bit }
-        : row,
-    )
-    const formulas = rebuildFormulasFromTruthTable(
-      truthTable,
-      gate.inputs,
-      gate.outputs,
-    )
-    commit({ ...gate, truthTable, formulas, updatedAt: Date.now() })
-  }
-
   const onFormulaChange = (outputId: string, formula: string) => {
     if (!gate || readOnly) return
     const formulas = { ...gate.formulas, [outputId]: formula }
     try {
-      const truthTable = applyFormulaToTable(
-        gate.truthTable,
-        gate.inputs,
-        outputId,
-        formula,
-      )
+      parseFormula(formula)
       commit({
         ...gate,
-        truthTable,
         formulas,
         updatedAt: Date.now(),
       })
       setFormulaError(null)
     } catch (err) {
-      // Keep typed formula visible but don't update table
       history.set({ ...gate, formulas }, false)
       setFormulaError(err instanceof FormulaError ? err.message : String(err))
     }
   }
 
   const onInputCountChange = (count: number) => {
-    if (!gate || readOnly) return
-    const n = Math.min(6, Math.max(1, count))
+    if (!gate || readOnly || !Number.isFinite(count)) return
+    const n = Math.max(1, Math.trunc(count))
     const inputs = renamePins(n, 'in', gate.inputs)
-    const truthTable = resizeTruthTable(inputs, gate.outputs, gate.truthTable, gate.inputs)
-    const formulas = rebuildFormulasFromTruthTable(truthTable, inputs, gate.outputs)
-    commit({ ...gate, inputs, truthTable, formulas, updatedAt: Date.now() })
+    commit({ ...gate, inputs, updatedAt: Date.now() })
   }
 
   const onOutputCountChange = (count: number) => {
-    if (!gate || readOnly) return
-    const n = Math.min(4, Math.max(1, count))
+    if (!gate || readOnly || !Number.isFinite(count)) return
+    const n = Math.max(1, Math.trunc(count))
     const outputs = renamePins(n, 'out', gate.outputs)
-    const truthTable = resizeTruthTable(gate.inputs, outputs, gate.truthTable, gate.inputs)
-    const formulas = rebuildFormulasFromTruthTable(truthTable, gate.inputs, outputs)
-    commit({ ...gate, outputs, truthTable, formulas, updatedAt: Date.now() })
+    const formulas = { ...gate.formulas }
+    for (const out of outputs) {
+      if (!(out.id in formulas)) formulas[out.id] = '0'
+    }
+    for (const outId of Object.keys(formulas)) {
+      if (!outputs.some((o) => o.id === outId)) delete formulas[outId]
+    }
+    commit({ ...gate, outputs, formulas, updatedAt: Date.now() })
   }
 
   const onRenamePin = (kind: 'in' | 'out', pinId: string, name: string) => {
     if (!gate || readOnly) return
     const clean = name.trim() || 'X'
     if (kind === 'in') {
+      const prev = gate.inputs.find((p) => p.id === pinId)
       const inputs = gate.inputs.map((p) => (p.id === pinId ? { ...p, name: clean } : p))
-      const formulas = rebuildFormulasFromTruthTable(gate.truthTable, inputs, gate.outputs)
+      const formulas = prev
+        ? renameInFormulas(gate.formulas, prev.name, clean)
+        : gate.formulas
       commit({ ...gate, inputs, formulas, updatedAt: Date.now() })
     } else {
       const outputs = gate.outputs.map((p) => (p.id === pinId ? { ...p, name: clean } : p))
@@ -269,7 +265,6 @@ export function LogicGateDetailPage() {
                 <Input
                   type="number"
                   min={1}
-                  max={6}
                   value={gate.inputs.length}
                   disabled={readOnly}
                   onChange={(e) => onInputCountChange(Number(e.target.value))}
@@ -280,7 +275,6 @@ export function LogicGateDetailPage() {
                 <Input
                   type="number"
                   min={1}
-                  max={4}
                   value={gate.outputs.length}
                   disabled={readOnly}
                   onChange={(e) => onOutputCountChange(Number(e.target.value))}
@@ -331,9 +325,7 @@ export function LogicGateDetailPage() {
                 <TruthTableEditor
                   inputs={gate.inputs}
                   outputs={gate.outputs}
-                  rows={gate.truthTable}
-                  readOnly={readOnly}
-                  onToggleOutput={onToggleOutput}
+                  formulas={gate.formulas}
                 />
               </div>
             </div>

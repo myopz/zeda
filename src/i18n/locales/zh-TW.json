@@ -64,6 +64,7 @@
     "total": "共 {{count}} 筆",
     "formula": "公式",
     "truthTable": "真值表",
+    "truthTableRowsPow": "共 2^{{n}} 行",
     "simulation": "模擬",
     "pins": "接腳",
     "addInput": "新增輸入",

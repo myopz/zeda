@@ -64,6 +64,7 @@
     "total": "{{count}} total",
     "formula": "Formula",
     "truthTable": "Truth Table",
+    "truthTableRowsPow": "2^{{n}} rows",
     "simulation": "Simulation",
     "pins": "Pins",
     "addInput": "Add input",

@@ -15,9 +15,7 @@ export type LogicGate = {
   builtinKey?: BuiltinKey
   inputs: GatePin[]
   outputs: GatePin[]
-  /** Each row maps pin id -> bit (inputs + outputs). */
-  truthTable: Record<string, Bit>[]
-  /** output pin id -> formula string */
+  /** output pin id -> formula string (source of truth; truth table is derived) */
   formulas: Record<string, string>
   createdAt: number
   updatedAt: number

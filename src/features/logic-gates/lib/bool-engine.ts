@@ -1,4 +1,4 @@
-import type { Bit, GatePin } from '../types'
+import type { Bit, GatePin, LogicGate } from '../types'
 
 export class FormulaError extends Error {
   constructor(message: string) {
@@ -6,6 +6,12 @@ export class FormulaError extends Error {
     this.name = 'FormulaError'
   }
 }
+
+/** Quine–McCluskey auto-simplify is only safe up to this many inputs. */
+export const AUTO_SIMPLIFY_MAX_INPUTS = 6
+
+/** Above this, prefer showing total rows as 2^n (Number precision). */
+export const SAFE_ROW_COUNT_BITS = 46
 
 type Token =
   | { kind: 'ident'; value: string }
@@ -212,36 +218,85 @@ export function evalFormula(source: string, envByName: Record<string, Bit>): Bit
   return evalAst(parseFormula(source), envByName)
 }
 
-export function generateInputCombinations(inputs: GatePin[]): Record<string, Bit>[] {
-  const n = inputs.length
-  const rows: Record<string, Bit>[] = []
-  const total = 1 << n
-  for (let i = 0; i < total; i += 1) {
-    const row: Record<string, Bit> = {}
-    for (let b = 0; b < n; b += 1) {
-      const pin = inputs[b]!
-      row[pin.id] = ((i >> (n - 1 - b)) & 1) as Bit
-    }
-    rows.push(row)
-  }
-  return rows
+export type GateEvalModel = {
+  inputs: GatePin[]
+  outputs: GatePin[]
+  formulas: Record<string, string>
 }
 
-export function truthTableFromFormula(
-  formula: string,
+export function totalTruthRowsBigInt(inputCount: number): bigint {
+  return 1n << BigInt(Math.max(0, inputCount))
+}
+
+export function bitsForRowIndex(rowIndex: bigint, inputCount: number): Bit[] {
+  const bits: Bit[] = []
+  for (let b = 0; b < inputCount; b += 1) {
+    const shift = BigInt(inputCount - 1 - b)
+    bits.push(Number((rowIndex >> shift) & 1n) as Bit)
+  }
+  return bits
+}
+
+export function inputBitsById(inputs: GatePin[], bits: Bit[]): Record<string, Bit> {
+  const row: Record<string, Bit> = {}
+  for (let i = 0; i < inputs.length; i += 1) {
+    row[inputs[i]!.id] = bits[i] ?? 0
+  }
+  return row
+}
+
+function envFromInputBits(
   inputs: GatePin[],
-  outputId: string,
-): Record<string, Bit>[] {
-  const ast = parseFormula(formula)
-  const nameById = Object.fromEntries(inputs.map((p) => [p.id, p.name]))
-  return generateInputCombinations(inputs).map((row) => {
-    const env: Record<string, Bit> = {}
-    for (const pin of inputs) {
-      env[pin.name] = row[pin.id]!
-      env[nameById[pin.id]!] = row[pin.id]!
+  inputBits: Record<string, Bit>,
+): Record<string, Bit> {
+  const env: Record<string, Bit> = {}
+  for (const pin of inputs) {
+    env[pin.name] = inputBits[pin.id] ?? 0
+  }
+  return env
+}
+
+/** Evaluate all outputs from formulas only. */
+export function evaluateOutputs(
+  model: GateEvalModel,
+  inputBits: Record<string, Bit>,
+): Record<string, Bit> {
+  const env = envFromInputBits(model.inputs, inputBits)
+  const out: Record<string, Bit> = {}
+  for (const o of model.outputs) {
+    const formula = model.formulas[o.id] ?? '0'
+    try {
+      out[o.id] = evalFormula(formula, env)
+    } catch {
+      out[o.id] = 0
     }
-    return { ...row, [outputId]: evalAst(ast, env) }
-  })
+  }
+  return out
+}
+
+export type TruthTablePageRow = {
+  rowIndex: bigint
+  cells: Record<string, Bit>
+}
+
+/** Lazily build one page of the truth table from formulas. */
+export function buildTruthTablePage(
+  model: GateEvalModel,
+  pageStart: bigint,
+  pageSize: number,
+): TruthTablePageRow[] {
+  const n = model.inputs.length
+  const total = totalTruthRowsBigInt(n)
+  const rows: TruthTablePageRow[] = []
+  for (let i = 0; i < pageSize; i += 1) {
+    const rowIndex = pageStart + BigInt(i)
+    if (rowIndex >= total) break
+    const bits = bitsForRowIndex(rowIndex, n)
+    const inputMap = inputBitsById(model.inputs, bits)
+    const outputs = evaluateOutputs(model, inputMap)
+    rows.push({ rowIndex, cells: { ...inputMap, ...outputs } })
+  }
+  return rows
 }
 
 /** Quine–McCluskey for up to ~6 inputs. */
@@ -342,22 +397,11 @@ export function simplifySop(minterms: number[], numVars: number): number[][] {
   )
 }
 
-export function formulaFromTruthTable(
-  truthTable: Record<string, Bit>[],
-  inputs: GatePin[],
-  outputId: string,
-): string {
+export function formulaFromMinterms(minterms: number[], inputs: GatePin[]): string {
   const n = inputs.length
   if (n === 0) {
-    const v = truthTable[0]?.[outputId] ?? 0
-    return v === 1 ? '1' : '0'
+    return minterms.includes(0) ? '1' : '0'
   }
-
-  const minterms: number[] = []
-  for (let i = 0; i < truthTable.length; i += 1) {
-    if (truthTable[i]![outputId] === 1) minterms.push(i)
-  }
-
   if (minterms.length === 0) return '0'
   if (minterms.length === 1 << n) return '1'
 
@@ -378,83 +422,64 @@ export function formulaFromTruthTable(
     .join(' OR ')
 }
 
-export function rebuildFormulasFromTruthTable(
-  truthTable: Record<string, Bit>[],
-  inputs: GatePin[],
-  outputs: GatePin[],
-): Record<string, string> {
-  const formulas: Record<string, string> = {}
-  for (const out of outputs) {
-    formulas[out.id] = formulaFromTruthTable(truthTable, inputs, out.id)
-  }
-  return formulas
-}
-
-export function applyFormulaToTable(
+function formulaFromLegacyTruthTable(
   truthTable: Record<string, Bit>[],
   inputs: GatePin[],
   outputId: string,
-  formula: string,
-): Record<string, Bit>[] {
-  const computed = truthTableFromFormula(formula, inputs, outputId)
-  return truthTable.map((row, i) => ({
-    ...row,
-    [outputId]: computed[i]![outputId]!,
-  }))
-}
-
-export function resizeTruthTable(
-  inputs: GatePin[],
-  outputs: GatePin[],
-  prevTable: Record<string, Bit>[],
-  prevInputs: GatePin[],
-): Record<string, Bit>[] {
-  const prevByKey = new Map<string, Record<string, Bit>>()
-  for (const row of prevTable) {
-    const key = prevInputs.map((p) => row[p.id] ?? 0).join('')
-    prevByKey.set(key, row)
+): string {
+  const n = inputs.length
+  if (n === 0) {
+    const v = truthTable[0]?.[outputId] ?? 0
+    return v === 1 ? '1' : '0'
   }
-
-  return generateInputCombinations(inputs).map((row) => {
-    const mapped: Record<string, Bit> = { ...row }
-    // try match overlapping input names
-    const keyParts = inputs.map((pin) => {
-      const old = prevInputs.find((p) => p.name === pin.name || p.id === pin.id)
-      return old ? String(row[pin.id]) : '0'
-    })
-    // Prefer exact previous pattern by name
-    const nameKey = prevInputs
-      .map((p) => {
-        const match = inputs.find((n) => n.name === p.name)
-        return match ? String(row[match.id]) : '0'
-      })
-      .join('')
-    const prev = prevByKey.get(nameKey) ?? prevByKey.get(keyParts.join(''))
-    for (const out of outputs) {
-      const prevOut =
-        prev?.[out.id] ??
-        (prev
-          ? Object.entries(prev).find(([k]) => !prevInputs.some((p) => p.id === k))?.[1]
-          : undefined)
-      mapped[out.id] = (prevOut as Bit | undefined) ?? 0
-    }
-    return mapped
-  })
+  const minterms: number[] = []
+  for (let i = 0; i < truthTable.length; i += 1) {
+    if (truthTable[i]![outputId] === 1) minterms.push(i)
+  }
+  return formulaFromMinterms(minterms, inputs)
 }
 
 export function defaultPinName(index: number, kind: 'in' | 'out'): string {
-  if (kind === 'in') return String.fromCharCode(65 + index) // A, B, C...
+  if (kind === 'in') return String.fromCharCode(65 + (index % 26)) + (index >= 26 ? String(Math.floor(index / 26)) : '')
   if (index === 0) return 'Y'
   return `Y${index + 1}`
 }
 
-export function createEmptyGateTable(
-  inputs: GatePin[],
-  outputs: GatePin[],
-): Record<string, Bit>[] {
-  return generateInputCombinations(inputs).map((row) => {
-    const full = { ...row }
-    for (const o of outputs) full[o.id] = 0
-    return full
-  })
+type LegacyGate = Partial<LogicGate> & {
+  truthTable?: Record<string, Bit>[]
+  overrides?: unknown
+  formulas?: Record<string, string>
+  inputs: GatePin[]
+  outputs: GatePin[]
+}
+
+/** Normalize persisted / imported gates to formula-only model. */
+export function normalizeGate(raw: LegacyGate): LogicGate {
+  const formulas: Record<string, string> = { ...(raw.formulas ?? {}) }
+
+  if (Array.isArray(raw.truthTable) && raw.truthTable.length > 0) {
+    const n = raw.inputs.length
+    if (n <= AUTO_SIMPLIFY_MAX_INPUTS) {
+      for (const out of raw.outputs) {
+        formulas[out.id] = formulaFromLegacyTruthTable(raw.truthTable, raw.inputs, out.id)
+      }
+    }
+  }
+
+  for (const out of raw.outputs) {
+    if (!(out.id in formulas)) formulas[out.id] = '0'
+  }
+
+  return {
+    id: raw.id!,
+    name: raw.name ?? 'Gate',
+    description: raw.description,
+    kind: raw.kind ?? 'custom',
+    builtinKey: raw.builtinKey,
+    inputs: raw.inputs,
+    outputs: raw.outputs,
+    formulas,
+    createdAt: raw.createdAt ?? Date.now(),
+    updatedAt: raw.updatedAt ?? Date.now(),
+  }
 }

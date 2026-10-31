@@ -1,4 +1,5 @@
 import { compareSnowflakeId, createId } from '@/lib/utils'
+import { normalizeGate } from '../lib/bool-engine'
 import type { GateExportPayload, LogicGate } from '../types'
 import { db, ensureSeeded } from './database'
 import { createBlankCustomGate } from './seed'
@@ -6,12 +7,13 @@ import { createBlankCustomGate } from './seed'
 export async function listGates(): Promise<LogicGate[]> {
   await ensureSeeded()
   const gates = await db.logicGates.toArray()
-  return gates.sort((a, b) => compareSnowflakeId(a.id, b.id))
+  return gates.map((g) => normalizeGate(g)).sort((a, b) => compareSnowflakeId(a.id, b.id))
 }
 
 export async function getGate(id: string): Promise<LogicGate | undefined> {
   await ensureSeeded()
-  return db.logicGates.get(id)
+  const gate = await db.logicGates.get(id)
+  return gate ? normalizeGate(gate) : undefined
 }
 
 export async function createGate(name: string): Promise<LogicGate> {
@@ -25,7 +27,7 @@ export async function updateGate(gate: LogicGate): Promise<LogicGate> {
   if (gate.kind === 'builtin') {
     throw new Error('Built-in gates cannot be modified')
   }
-  const next = { ...gate, updatedAt: Date.now() }
+  const next = normalizeGate({ ...gate, updatedAt: Date.now() })
   await db.logicGates.put(next)
   return next
 }
@@ -58,7 +60,7 @@ export async function duplicateGate(id: string, copySuffix: string): Promise<Log
 
 export async function exportGates(ids?: string[]): Promise<GateExportPayload> {
   await ensureSeeded()
-  const all = await db.logicGates.toArray()
+  const all = await listGates()
   const gates = ids?.length ? all.filter((g) => ids.includes(g.id)) : all
   return {
     version: 1,
@@ -74,14 +76,16 @@ export async function importGates(payload: unknown): Promise<number> {
     throw new Error('Invalid import file')
   }
   const now = Date.now()
-  const toAdd: LogicGate[] = data.gates.map((g) => ({
-    ...structuredClone(g),
-    id: createId('gate'),
-    kind: 'custom' as const,
-    builtinKey: undefined,
-    createdAt: now,
-    updatedAt: now,
-  }))
+  const toAdd: LogicGate[] = data.gates.map((g) =>
+    normalizeGate({
+      ...structuredClone(g),
+      id: createId('gate'),
+      kind: 'custom',
+      builtinKey: undefined,
+      createdAt: now,
+      updatedAt: now,
+    }),
+  )
   await db.logicGates.bulkAdd(toAdd)
   return toAdd.length
 }
