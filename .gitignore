@@ -24,3 +24,8 @@ dist-ssr
 *.sw?
 
 .tmp
+
+# Cloudflare / Wrangler
+.wrangler
+.dev.vars
+!.dev.vars.example
