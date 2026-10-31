@@ -5,7 +5,7 @@ import { LogicGateListPage } from '@/features/logic-gates/pages/LogicGateListPag
 
 export function AppRouter() {
   return (
-    <BrowserRouter basename="/zeta">
+    <BrowserRouter basename="/zeda">
       <Routes>
         <Route element={<AppShell />}>
           <Route index element={<Navigate to="/lgc" replace />} />
