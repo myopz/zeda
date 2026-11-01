@@ -1,5 +1,9 @@
 import type { Bit, SequentialCircuit, WireEndpoint } from '../types'
-import type { FfSimState } from '@/features/flip-flops/lib/seq-sim'
+import {
+  BEHAVIOR_NODE_ID,
+  resolveBehaviorKey,
+  type FfSimState,
+} from '@/features/flip-flops/lib/seq-sim'
 import { resolveSeqOrFfModule } from './seq-modules'
 
 function wireToOutput(
@@ -19,10 +23,41 @@ type PresentTarget = {
   stateNames: string[]
 }
 
+function stateNameFromPin(
+  pinName: string,
+  stateNames: string[],
+): string | null {
+  if (
+    pinName === 'Qn' ||
+    (pinName.endsWith('n') && pinName.length > 1 && pinName !== 'n')
+  ) {
+    const base = pinName === 'Qn' ? 'Q' : pinName.slice(0, -1)
+    if (stateNames.includes(base)) return base
+  }
+  if (stateNames.includes(pinName)) return pinName
+  return null
+}
+
 function resolvePresentTarget(
   circuit: SequentialCircuit,
   outputPinId: string,
 ): PresentTarget | null {
+  const behaviorKey = resolveBehaviorKey(circuit, resolveSeqOrFfModule)
+  if (behaviorKey) {
+    const mod = resolveSeqOrFfModule(behaviorKey)
+    if (mod) {
+      const out = circuit.outputs.find((p) => p.id === outputPinId)
+      if (!out) return null
+      const stateName = stateNameFromPin(out.name, mod.stateNames)
+      if (!stateName) return null
+      return {
+        nodeId: BEHAVIOR_NODE_ID,
+        stateName,
+        stateNames: mod.stateNames,
+      }
+    }
+  }
+
   const driver = wireToOutput(circuit, outputPinId)
   if (!driver || driver.nodeId === 'io') return null
 
@@ -35,14 +70,7 @@ function resolvePresentTarget(
   const outPin = mod.outputs.find((p) => p.id === driver.pinId)
   if (!outPin) return null
 
-  const name = outPin.name
-  let stateName: string | null = null
-  if (name === 'Qn' || (name.endsWith('n') && name.length > 1 && name !== 'n')) {
-    const base = name === 'Qn' ? 'Q' : name.slice(0, -1)
-    if (mod.stateNames.includes(base)) stateName = base
-  } else if (mod.stateNames.includes(name)) {
-    stateName = name
-  }
+  const stateName = stateNameFromPin(outPin.name, mod.stateNames)
   if (!stateName) return null
 
   return {

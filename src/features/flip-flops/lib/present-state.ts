@@ -1,6 +1,10 @@
 import type { Bit, FlipFlopCircuit, WireEndpoint } from '../types'
 import { getFfModule } from './ff-modules'
-import { BEHAVIOR_NODE_ID, type FfSimState } from './seq-sim'
+import {
+  BEHAVIOR_NODE_ID,
+  resolveBehaviorKey,
+  type FfSimState,
+} from './seq-sim'
 
 function wireToOutput(
   circuit: FlipFlopCircuit,
@@ -38,6 +42,23 @@ function resolvePresentTarget(
   circuit: FlipFlopCircuit,
   outputPinId: string,
 ): PresentTarget | null {
+  // Prefer catalog behavior whenever the sim kernel will use it.
+  const behaviorKey = resolveBehaviorKey(circuit, (k) => getFfModule(k))
+  if (behaviorKey) {
+    const mod = getFfModule(behaviorKey)
+    if (mod) {
+      const out = circuit.outputs.find((p) => p.id === outputPinId)
+      if (!out) return null
+      const stateName = stateNameFromPin(out.name, mod.stateNames)
+      if (!stateName) return null
+      return {
+        nodeId: BEHAVIOR_NODE_ID,
+        stateName,
+        stateNames: mod.stateNames,
+      }
+    }
+  }
+
   const driver = wireToOutput(circuit, outputPinId)
   if (driver && driver.nodeId !== 'io') {
     const node = circuit.nodes.find((n) => n.id === driver.nodeId)
@@ -59,22 +80,7 @@ function resolvePresentTarget(
     }
   }
 
-  // Gate-level seeds with behaviorKey (no FF nodes): map IO name → behavior state.
-  const hasFf = circuit.nodes.some((n) => n.kind === 'ff')
-  if (hasFf) return null
-  const behaviorKey = circuit.behaviorKey ?? circuit.builtinKey
-  if (!behaviorKey) return null
-  const mod = getFfModule(behaviorKey)
-  if (!mod) return null
-  const out = circuit.outputs.find((p) => p.id === outputPinId)
-  if (!out) return null
-  const stateName = stateNameFromPin(out.name, mod.stateNames)
-  if (!stateName) return null
-  return {
-    nodeId: BEHAVIOR_NODE_ID,
-    stateName,
-    stateNames: mod.stateNames,
-  }
+  return null
 }
 
 /** Outputs whose value can seed / toggle present-state (现态). */

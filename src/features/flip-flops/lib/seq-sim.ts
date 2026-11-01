@@ -246,17 +246,19 @@ function isNodeOutput(
 /** Synthetic node id for circuit-level behaviorKey simulation. */
 export const BEHAVIOR_NODE_ID = '__behavior__'
 
-function resolveBehaviorKey(
-  circuit: SimCircuit,
+/**
+ * Catalog behavior is authoritative when declared (behaviorKey / builtinKey).
+ * Hierarchical FF/seq nodes remain for teaching layout; they are not used for
+ * stepping while a resolvable behavior key is present (avoids stand-in nets
+ * like always-1 T chains or master–slave edge polarity drift).
+ */
+export function resolveBehaviorKey(
+  circuit: Pick<SimCircuit, 'behaviorKey' | 'builtinKey'>,
   resolveModule: ModuleResolver,
 ): string | undefined {
   const key = circuit.behaviorKey ?? circuit.builtinKey
   if (!key) return undefined
   return resolveModule(key) ? key : undefined
-}
-
-function hasStatefulNodes(circuit: SimCircuit): boolean {
-  return circuit.nodes.some((n) => isStateful(n))
 }
 
 export function createSimState(
@@ -266,7 +268,7 @@ export function createSimState(
   const ffState: Record<string, Record<string, Bit>> = {}
   const prevClk: Record<string, Bit> = {}
   const behaviorKey = resolveBehaviorKey(circuit, resolveModule)
-  if (behaviorKey && !hasStatefulNodes(circuit)) {
+  if (behaviorKey) {
     const mod = resolveModule(behaviorKey)!
     ffState[BEHAVIOR_NODE_ID] = initialModuleState(mod)
     prevClk[BEHAVIOR_NODE_ID] = 0
@@ -371,7 +373,7 @@ export function evaluateSimCircuit(
   resolveCombo: ComboResolver = () => undefined,
 ): SeqEvalResult {
   const behaviorKey = resolveBehaviorKey(circuit, resolveModule)
-  if (behaviorKey && !hasStatefulNodes(circuit)) {
+  if (behaviorKey) {
     return evaluateBehaviorCircuit(
       circuit,
       behaviorKey,

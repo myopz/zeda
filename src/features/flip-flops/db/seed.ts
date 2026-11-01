@@ -17,7 +17,7 @@ import {
 } from '../types'
 
 /** Bump when seed layout / IO changes so IndexedDB seeds re-apply. */
-export const FF_LAYOUT_REV = 9
+export const FF_LAYOUT_REV = 11
 
 const FF_IDS: Record<FfModuleKey, string> = {
   rs_basic_nor: snowflake.fixed(201),
@@ -32,8 +32,12 @@ const FF_IDS: Record<FfModuleKey, string> = {
   '74ls175': snowflake.fixed(210),
 }
 
-/** Reserved for future custom-only seeds (74LS now ship as composite builtins). */
-export const CUSTOM_SEED_KEYS = new Set<FfModuleKey>([])
+/** Seeded as editable custom circuits (not read-only builtins). */
+export const CUSTOM_SEED_KEYS = new Set<FfModuleKey>([
+  '74ls74',
+  '74ls112',
+  '74ls175',
+])
 
 export const LEGACY_FF_IDS = [] as const
 
@@ -54,8 +58,8 @@ const DESCRIPTIONS: Record<FfModuleKey, string> = {
   rs_basic_nor: 'Gate-level cross-coupled NOR; S=R=1 forbidden',
   rs_gated: 'AND gates + reusable basic RS module',
   jk_gated: 'AND tree + reusable basic RS module',
-  jk_edge: 'Master–slave: 2× gated JK modules + complementary CLK',
-  d_edge: 'Master–slave D: NOT + 2× gated RS modules',
+  jk_edge: 'Master–slave JK (↑CLK); async via behavior',
+  d_edge: 'Master–slave D (↑CLK); async nPRE/nCLR via behavior',
   t_edge: 'XOR + edge D module (D = T⊕Q)',
   t_bar_edge: 'XNOR + edge D module (D = T⊙Q)',
   '74ls74': 'Dual edge D modules (independent clocks / async)',
@@ -97,14 +101,15 @@ function buildGateLevelCircuit(key: GateLevelFfKey): FlipFlopCircuit {
   }))
 
   const mod = getFfModule(key)!
+  const isCustomSeed = CUSTOM_SEED_KEYS.has(key)
   const now = Date.now()
   return {
     id: FF_IDS[key],
     name: DISPLAY_NAMES[key],
     description: DESCRIPTIONS[key],
-    kind: 'builtin',
-    builtinKey: key,
-    // Pure gate latches only; composites with embedded FF modules omit this.
+    kind: isCustomSeed ? 'custom' : 'builtin',
+    builtinKey: isCustomSeed ? undefined : key,
+    // Catalog step() remains authoritative via behaviorKey (incl. custom 74LS).
     behaviorKey: view.behaviorKey,
     group: mod.category,
     inputs,

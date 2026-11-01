@@ -40,6 +40,19 @@ const CUSTOM_GROUP_SENTINEL = '__custom__'
 
 type Draft = LogicGate
 
+/** First formula parse error across outputs, or null if all parse. */
+function firstFormulaError(gate: LogicGate): string | null {
+  for (const out of gate.outputs) {
+    const formula = gate.formulas[out.id] ?? ''
+    try {
+      parseFormula(formula)
+    } catch (err) {
+      return err instanceof FormulaError ? err.message : String(err)
+    }
+  }
+  return null
+}
+
 function renamePins(count: number, kind: 'in' | 'out', prev: GatePin[]): GatePin[] {
   const next: GatePin[] = []
   for (let i = 0; i < count; i += 1) {
@@ -93,6 +106,7 @@ export function LogicGateDetailPage() {
         return
       }
       history.reset(structuredClone(gate))
+      setFormulaError(firstFormulaError(gate))
       setGroupOptions([...new Set(all.map((g) => g.group || DEFAULT_GATE_GROUP))])
       setLoading(false)
     })()

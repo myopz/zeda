@@ -162,15 +162,14 @@ function finish(
 ): SequentialCircuit {
   const mod = getSeqModule(key)!
   const now = Date.now()
-  const hasStateful = b.nodes.some((n) => n.kind === 'ff' || n.kind === 'seq')
   return {
     id: `view:${key}`,
     name: key,
     description,
     kind: 'custom',
     group: mod.category,
-    // Nested FF/seq modules step themselves; no whole-circuit behaviorKey.
-    behaviorKey: hasStateful ? undefined : key,
+    // Catalog step() is authoritative (mod-N / TTL); nodes are structural stand-ins.
+    behaviorKey: key,
     inputs,
     outputs,
     nodes: spaceNodes(b.nodes),

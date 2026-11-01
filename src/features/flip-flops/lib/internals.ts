@@ -194,16 +194,14 @@ function finish(
 ): FlipFlopCircuit {
   const mod = getFfModule(key)!
   const now = Date.now()
-  const hasFfNodes = b.nodes.some((n) => n.kind === 'ff')
   return {
     id: `view:${key}`,
     name: key,
     description,
     kind: 'custom',
     group: mod.category,
-    // Only pure gate latches with feedback need whole-circuit behaviorKey.
-    // Composites that embed BASIC_RS_KEY simulate via nested FF modules.
-    behaviorKey: hasFfNodes ? undefined : key,
+    // Catalog step() is authoritative; hierarchical nodes are the teaching view.
+    behaviorKey: key,
     inputs,
     outputs,
     nodes: spaceNodes(b.nodes),
@@ -537,18 +535,12 @@ function buildDEdge(gates: LogicGate[]): FlipFlopCircuit {
   const d = io(findPin(inputs, 'D'))
   const notClk = addGate(b, 'not', COL, ROW * 2, 'notClk')
   connect(b, clk, gIn(notClk.id, notClk.gate, 'A'))
+  const nClk = gOut(notClk.id, notClk.gate, 'Y')
 
-  // Master: D/¬D → gated RS (EN=CLK); slave: Q/Qn → gated RS (EN=¬CLK).
-  const master = addGatedD(b, d, clk, COL, ROW, 'master')
-  const slave = addRsFromQPair(
-    b,
-    master.q,
-    master.qn,
-    gOut(notClk.id, notClk.gate, 'Y'),
-    COL * 4,
-    ROW,
-    'slave',
-  )
+  // Rising-edge MS: master samples on CLK=0 (EN=¬CLK); slave updates on CLK=1.
+  // Async nPRE/nCLR are catalog-behavior only (gated RS stages have no async pins).
+  const master = addGatedD(b, d, nClk, COL, ROW, 'master')
+  const slave = addRsFromQPair(b, master.q, master.qn, clk, COL * 4, ROW, 'slave')
 
   void findPin(inputs, 'nPRE')
   void findPin(inputs, 'nCLR')
@@ -560,7 +552,7 @@ function buildDEdge(gates: LogicGate[]): FlipFlopCircuit {
     inputs,
     outputs,
     b,
-    'Master–slave D: NOT + 2× gated RS modules',
+    'Master–slave D: NOT + 2× gated RS (↑CLK); async via behavior',
   )
 }
 
@@ -570,17 +562,18 @@ function buildJkEdge(gates: LogicGate[]): FlipFlopCircuit {
   const clk = io(findPin(inputs, 'CLK'))
   const notClk = addGate(b, 'not', COL, ROW * 2, 'notClk')
   connect(b, clk, gIn(notClk.id, notClk.gate, 'A'))
+  const nClk = gOut(notClk.id, notClk.gate, 'Y')
 
-  // Master–slave: two reusable gated JK modules on complementary clocks.
+  // Rising-edge MS: master on ¬CLK, slave on CLK. Async via behavior model.
   const master = addGatedJkModule(b, COL * 2, ROW, 'master')
   connect(b, io(findPin(inputs, 'J')), master.j)
   connect(b, io(findPin(inputs, 'K')), master.k)
-  connect(b, clk, master.clk)
+  connect(b, nClk, master.clk)
 
   const slave = addGatedJkModule(b, COL * 4, ROW, 'slave')
   connect(b, master.q, slave.j)
   connect(b, master.qn, slave.k)
-  connect(b, gOut(notClk.id, notClk.gate, 'Y'), slave.clk)
+  connect(b, clk, slave.clk)
 
   void findPin(inputs, 'nPRE')
   void findPin(inputs, 'nCLR')
@@ -592,7 +585,7 @@ function buildJkEdge(gates: LogicGate[]): FlipFlopCircuit {
     inputs,
     outputs,
     b,
-    'Master–slave JK: 2× gated JK modules + complementary CLK',
+    'Master–slave JK: 2× gated JK (↑CLK); async via behavior',
   )
 }
 

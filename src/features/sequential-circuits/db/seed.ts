@@ -16,7 +16,14 @@ import {
 } from '../types'
 
 /** Bump when seed layout / IO changes so IndexedDB seeds re-apply. */
-export const SEQ_LAYOUT_REV = 2
+export const SEQ_LAYOUT_REV = 4
+
+/** Seeded as editable custom circuits (not read-only builtins). */
+export const CUSTOM_SEED_KEYS = new Set<SeqModuleKey>([
+  '74ls161',
+  '74ls90',
+  '74ls194',
+])
 
 const SEQ_IDS: Record<SeqModuleKey, string> = {
   reg_4: snowflake.fixed(301),
@@ -78,7 +85,7 @@ function remapEndpoint(
 /**
  * Seed = hierarchical internals (gates + FF modules), same pattern as flip-flops.
  * Top-level canvas shows the composed circuit (not a single black-box seq node).
- * Builtin remains read-only;「复制为自定义」后可改拓扑。
+ * Builtin remains read-only; 74LS custom seeds are editable; others「复制为自定义」后可改拓扑。
  */
 function buildHierarchicalCircuit(key: SeqModuleKey): SequentialCircuit {
   const gates = createSeedGates()
@@ -86,6 +93,7 @@ function buildHierarchicalCircuit(key: SeqModuleKey): SequentialCircuit {
   if (!view) throw new Error(`No hierarchical internals for ${key}`)
 
   const mod = getSeqModule(key)!
+  const isCustomSeed = CUSTOM_SEED_KEYS.has(key)
   const pinMap = new Map<string, string>()
   const inputs = view.inputs.map((p) => {
     const id = `seq:${key}:in:${p.name}`
@@ -109,8 +117,9 @@ function buildHierarchicalCircuit(key: SeqModuleKey): SequentialCircuit {
     id: SEQ_IDS[key],
     name: DISPLAY_NAMES[key],
     description: DESCRIPTIONS[key],
-    kind: 'builtin',
-    builtinKey: key,
+    kind: isCustomSeed ? 'custom' : 'builtin',
+    builtinKey: isCustomSeed ? undefined : key,
+    // Catalog step() remains authoritative via behaviorKey (incl. custom 74LS).
     behaviorKey: view.behaviorKey,
     group: mod.category,
     inputs,
