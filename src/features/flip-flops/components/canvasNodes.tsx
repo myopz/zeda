@@ -14,7 +14,7 @@ export type IoNodeData = {
   bit?: Bit
   /** Shown under the pin name (e.g. CLK / VCC / GND). */
   driveLabel?: string
-  /** Click input pin to toggle simulation level */
+  /** Click input to toggle stimulus, or output to set present state */
   onToggle?: () => void
   highlight?: NodeHighlight
 }
@@ -59,7 +59,7 @@ function bitClass(bit: Bit | undefined, role: 'in' | 'out') {
 export function IoNode({ data }: NodeProps) {
   const d = data as IoNodeData
   const isIn = d.role === 'in'
-  const toggleable = isIn && !!d.onToggle
+  const toggleable = !!d.onToggle
   return (
     <div
       className={cn(
@@ -73,7 +73,13 @@ export function IoNode({ data }: NodeProps) {
         e.stopPropagation()
         d.onToggle?.()
       }}
-      title={toggleable ? 'Click to toggle' : undefined}
+      title={
+        toggleable
+          ? isIn
+            ? 'Click to toggle input'
+            : 'Click to set present state (现态)'
+          : undefined
+      }
     >
       <div className="font-mono font-medium">{d.label}</div>
       <div className="text-[10px] text-muted-foreground">
@@ -81,7 +87,7 @@ export function IoNode({ data }: NodeProps) {
           ? d.driveLabel
           : isIn
             ? 'IN'
-            : 'OUT'}
+            : 'OUT · 现态'}
         {d.bit !== undefined ? ` · ${d.bit}` : ''}
       </div>
       {isIn ? (

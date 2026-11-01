@@ -1,8 +1,6 @@
 import {
   ArrowLeft,
-  ChevronDown,
   ChevronRight,
-  ChevronUp,
   Copy,
   Redo2,
   Save,
@@ -85,12 +83,6 @@ export function ComboCircuitDetailPage() {
     readCollapsed(SIDE_COLLAPSE_KEY, true),
   )
   const [analysisTab, setAnalysisTab] = useState('table')
-  // Always start expanded when entering; collapse is not persisted.
-  const [analysisCollapsed, setAnalysisCollapsed] = useState(false)
-
-  useEffect(() => {
-    setAnalysisCollapsed(false)
-  }, [id])
 
   useEffect(() => {
     let cancelled = false
@@ -509,65 +501,35 @@ export function ComboCircuitDetailPage() {
       {!inDrill && rootCircuit ? (
         <div className="rounded-lg border bg-card">
           <Tabs value={analysisTab} onValueChange={setAnalysisTab}>
-            <div
-              className="flex cursor-pointer flex-wrap items-center gap-2 px-3 py-2"
-              role="button"
-              tabIndex={0}
-              aria-expanded={!analysisCollapsed}
-              aria-label={
-                analysisCollapsed
-                  ? t('circuits.analysisExpand')
-                  : t('circuits.analysisCollapse')
-              }
-              onClick={() => setAnalysisCollapsed((c) => !c)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  setAnalysisCollapsed((c) => !c)
-                }
-              }}
-            >
-              <span className="inline-flex h-7 items-center gap-1 px-2 text-xs font-medium">
-                {analysisCollapsed ? (
-                  <ChevronDown className="size-3.5" />
-                ) : (
-                  <ChevronUp className="size-3.5" />
-                )}
+            <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+              <span className="inline-flex h-7 items-center px-2 text-xs font-medium">
                 {t('circuits.analysis')}
               </span>
-              {!analysisCollapsed ? (
-                <TabsList
-                  className="h-8"
-                  onClick={(e) => e.stopPropagation()}
-                  onKeyDown={(e) => e.stopPropagation()}
-                >
-                  <TabsTrigger value="table" className="text-xs">
-                    {t('circuits.funcTable')}
-                  </TabsTrigger>
-                  <TabsTrigger value="timing" className="text-xs">
-                    {t('circuits.timing')}
-                  </TabsTrigger>
-                </TabsList>
-              ) : null}
+              <TabsList className="h-8">
+                <TabsTrigger value="table" className="text-xs">
+                  {t('circuits.funcTable')}
+                </TabsTrigger>
+                <TabsTrigger value="timing" className="text-xs">
+                  {t('circuits.timing')}
+                </TabsTrigger>
+              </TabsList>
             </div>
-            {!analysisCollapsed ? (
-              <div className="border-t px-3 py-3">
-                <TabsContent value="table" className="mt-0">
-                  <TruthTablePanel
-                    circuit={rootCircuit}
-                    gates={gates}
-                    circuits={[...circuitMap.values()]}
-                  />
-                </TabsContent>
-                <TabsContent value="timing" className="mt-0">
-                  <TimingDiagram
-                    circuit={rootCircuit}
-                    gates={gates}
-                    circuits={[...circuitMap.values()]}
-                  />
-                </TabsContent>
-              </div>
-            ) : null}
+            <div className="border-t px-3 py-3">
+              <TabsContent value="table" className="mt-0">
+                <TruthTablePanel
+                  circuit={rootCircuit}
+                  gates={gates}
+                  circuits={[...circuitMap.values()]}
+                />
+              </TabsContent>
+              <TabsContent value="timing" className="mt-0">
+                <TimingDiagram
+                  circuit={rootCircuit}
+                  gates={gates}
+                  circuits={[...circuitMap.values()]}
+                />
+              </TabsContent>
+            </div>
           </Tabs>
         </div>
       ) : null}

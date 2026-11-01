@@ -178,6 +178,8 @@ type Props = {
   onDrillComboModule?: (moduleKey: string) => void
   /** Toggle a circuit input pin level (simulation) */
   onToggleInput?: (pinId: string) => void
+  /** Toggle present-state bit via an output pin (simulation) */
+  onToggleOutputState?: (pinId: string) => void
   className?: string
 }
 
@@ -230,6 +232,7 @@ function buildFlowGraph(
   comboCircuits?: ComboCircuit[],
   onDrillCombo?: (circuitId: string) => void,
   onDrillComboModule?: (moduleKey: string) => void,
+  onToggleOutputState?: (pinId: string) => void,
 ): { nodes: Node[]; edges: Edge[] } {
   const gateById = new Map(gates.map((g) => [g.id, g]))
   const gateByKey = new Map<string, LogicGate>()
@@ -284,6 +287,9 @@ function buildFlowGraph(
         label: pin.name,
         pinId: pin.id,
         bit,
+        onToggle: onToggleOutputState
+          ? () => onToggleOutputState(pin.id)
+          : undefined,
       } satisfies IoNodeData,
       draggable: true,
     })
@@ -431,6 +437,7 @@ function CanvasInner({
   onDrillCombo,
   onDrillComboModule,
   onToggleInput,
+  onToggleOutputState,
   className,
 }: Props) {
   const { t } = useTranslation()
@@ -467,6 +474,7 @@ function CanvasInner({
         comboCircuits,
         onDrillCombo,
         onDrillComboModule,
+        onToggleOutputState,
       ),
     [
       circuit,
@@ -476,6 +484,7 @@ function CanvasInner({
       nodeOutBits,
       moduleLabel,
       onToggleInput,
+      onToggleOutputState,
       onDrillModule,
       onDrillCombo,
       onDrillComboModule,

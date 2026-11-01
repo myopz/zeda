@@ -633,6 +633,10 @@ export function evaluateSimCircuit(
   const stepModules = (useEdgePrev: boolean) => {
     const nextState: Record<string, Record<string, Bit>> = { ...workingState }
     const nextPrevClk: Record<string, Bit> = { ...workingPrevClk }
+    // Collect output writes and apply after all modules sample — otherwise a
+    // sync edge would let later FFs see earlier siblings' *new* Q (shift/chain
+    // would collapse instead of transferring present state).
+    const pendingOutWrites: { key: string; value: Bit }[] = []
     for (const node of circuit.nodes) {
       if (!isStateful(node)) continue
       const mod = resolveModule(node.moduleKey)
@@ -672,12 +676,13 @@ export function evaluateSimCircuit(
         mod.outputs.map((p) => [p.id, stepped.outputs[p.name] ?? 0]),
       )
       for (const p of mod.outputs) {
-        setNetBit(
-          endpointKey({ nodeId: node.id, pinId: p.id }),
-          stepped.outputs[p.name] ?? 0,
-        )
+        pendingOutWrites.push({
+          key: endpointKey({ nodeId: node.id, pinId: p.id }),
+          value: stepped.outputs[p.name] ?? 0,
+        })
       }
     }
+    for (const w of pendingOutWrites) setNetBit(w.key, w.value)
     workingState = nextState
     workingPrevClk = nextPrevClk
   }
