@@ -1,5 +1,5 @@
 import { ArrowLeft, Redo2, Save, Undo2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useLocation, useParams } from 'react-router'
 import { Badge } from '@/components/ui/badge'
@@ -7,6 +7,13 @@ import { Button } from '@/components/ui/button'
 import { DraftNumberInput } from '@/components/ui/draft-number-input'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
 import { createId } from '@/lib/utils'
@@ -14,10 +21,22 @@ import { FormulaEditor } from '../components/FormulaEditor'
 import { GateSymbol } from '../components/GateSymbol'
 import { SimCanvas } from '../components/SimCanvas'
 import { TruthTableEditor } from '../components/TruthTableEditor'
-import { getGate, updateGate } from '../db/repository'
+import { getGate, listGates, updateGate } from '../db/repository'
 import { FormulaError, defaultPinName, parseFormula } from '../lib/bool-engine'
+import {
+  gateGroupLabel,
+  isPresetGateGroup,
+  PRESET_GATE_GROUPS,
+  sortGateGroups,
+} from '../lib/groups'
 import { useHistoryState } from '../lib/history'
-import type { GatePin, LogicGate } from '../types'
+import {
+  DEFAULT_GATE_GROUP,
+  type GatePin,
+  type LogicGate,
+} from '../types'
+
+const CUSTOM_GROUP_SENTINEL = '__custom__'
 
 type Draft = LogicGate
 
@@ -58,6 +77,7 @@ export function LogicGateDetailPage() {
   const [notFound, setNotFound] = useState(false)
   const [formulaError, setFormulaError] = useState<string | null>(null)
   const [savedFlash, setSavedFlash] = useState(false)
+  const [groupOptions, setGroupOptions] = useState<string[]>([])
   const history = useHistoryState<Draft | null>(null)
 
   useEffect(() => {
@@ -65,7 +85,7 @@ export function LogicGateDetailPage() {
     ;(async () => {
       if (!id) return
       setLoading(true)
-      const gate = await getGate(id)
+      const [gate, all] = await Promise.all([getGate(id), listGates()])
       if (cancelled) return
       if (!gate) {
         setNotFound(true)
@@ -73,6 +93,7 @@ export function LogicGateDetailPage() {
         return
       }
       history.reset(structuredClone(gate))
+      setGroupOptions([...new Set(all.map((g) => g.group || DEFAULT_GATE_GROUP))])
       setLoading(false)
     })()
     return () => {
@@ -83,10 +104,52 @@ export function LogicGateDetailPage() {
 
   const gate = history.state
   const readOnly = gate?.kind === 'builtin'
+  const currentGroup = gate?.group || DEFAULT_GATE_GROUP
+
+  const customGroups = useMemo(() => {
+    const extras = new Set<string>()
+    for (const g of groupOptions) {
+      if (g && !isPresetGateGroup(g)) extras.add(g)
+    }
+    if (!isPresetGateGroup(currentGroup)) extras.add(currentGroup)
+    return sortGateGroups(extras, t)
+  }, [currentGroup, groupOptions, t])
+
+  const listedGroupKeys = useMemo(
+    () => new Set<string>([...PRESET_GATE_GROUPS, ...customGroups]),
+    [customGroups],
+  )
+
+  const [customGroupEditing, setCustomGroupEditing] = useState(false)
+  const [customGroupDraft, setCustomGroupDraft] = useState('')
+
+  useEffect(() => {
+    if (!gate) return
+    const g = gate.group || DEFAULT_GATE_GROUP
+    const listed = new Set<string>([...PRESET_GATE_GROUPS, ...groupOptions])
+    const isListed = listed.has(g) || isPresetGateGroup(g)
+    setCustomGroupEditing(!isListed)
+    setCustomGroupDraft(isPresetGateGroup(g) ? '' : g)
+  }, [gate?.id, gate?.group, groupOptions])
+
+  const groupSelectValue = customGroupEditing
+    ? CUSTOM_GROUP_SENTINEL
+    : listedGroupKeys.has(currentGroup)
+      ? currentGroup
+      : CUSTOM_GROUP_SENTINEL
 
   const commit = (next: Draft) => {
     history.set(next)
     setFormulaError(null)
+  }
+
+  const setGroup = (group: string) => {
+    if (!gate || readOnly) return
+    commit({
+      ...gate,
+      group: group.trim() || DEFAULT_GATE_GROUP,
+      updatedAt: Date.now(),
+    })
   }
 
   const onFormulaChange = (outputId: string, formula: string) => {
@@ -241,6 +304,62 @@ export function LogicGateDetailPage() {
                 commit({ ...gate, name: e.target.value, updatedAt: Date.now() })
               }
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="gate-group">{t('gates.group')}</Label>
+            <Select
+              value={groupSelectValue}
+              disabled={readOnly}
+              onValueChange={(value) => {
+                if (value === CUSTOM_GROUP_SENTINEL) {
+                  setCustomGroupEditing(true)
+                  setCustomGroupDraft(
+                    isPresetGateGroup(currentGroup) ? '' : currentGroup,
+                  )
+                  return
+                }
+                setCustomGroupEditing(false)
+                setCustomGroupDraft('')
+                setGroup(value)
+              }}
+            >
+              <SelectTrigger id="gate-group" className="w-full">
+                <SelectValue
+                  placeholder={gateGroupLabel(DEFAULT_GATE_GROUP, t)}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {PRESET_GATE_GROUPS.map((key) => (
+                  <SelectItem key={key} value={key}>
+                    {gateGroupLabel(key, t)}
+                  </SelectItem>
+                ))}
+                {customGroups.map((key) => (
+                  <SelectItem key={`custom-${key}`} value={key}>
+                    {gateGroupLabel(key, t)}
+                  </SelectItem>
+                ))}
+                <SelectItem value={CUSTOM_GROUP_SENTINEL}>
+                  {t('gates.groupCustom')}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            {customGroupEditing || groupSelectValue === CUSTOM_GROUP_SENTINEL ? (
+              <Input
+                value={customGroupDraft}
+                disabled={readOnly}
+                placeholder={t('gates.groupCustomPlaceholder')}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setCustomGroupDraft(v)
+                  setCustomGroupEditing(true)
+                  if (v.trim()) setGroup(v.trim())
+                }}
+              />
+            ) : null}
+            <p className="text-[11px] text-muted-foreground">
+              {t('gates.groupHint')}
+            </p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="gate-desc">{t('gates.description')}</Label>

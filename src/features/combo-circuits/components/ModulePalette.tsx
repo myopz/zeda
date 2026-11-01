@@ -4,7 +4,14 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { GateSymbol } from '@/features/logic-gates/components/GateSymbol'
-import type { LogicGate } from '@/features/logic-gates/types'
+import {
+  gateGroupLabel,
+  sortGateGroups,
+} from '@/features/logic-gates/lib/groups'
+import {
+  DEFAULT_GATE_GROUP,
+  type LogicGate,
+} from '@/features/logic-gates/types'
 import { cn } from '@/lib/utils'
 import {
   circuitGroupLabel,
@@ -151,13 +158,32 @@ export function ModulePalette({
 
   const filteredGates = useMemo(() => {
     if (!q) return gates
-    return gates.filter(
-      (g) =>
+    return gates.filter((g) => {
+      const group = gateGroupLabel(g.group || DEFAULT_GATE_GROUP, t).toLowerCase()
+      return (
         g.name.toLowerCase().includes(q) ||
         g.builtinKey?.toLowerCase().includes(q) ||
-        g.description?.toLowerCase().includes(q),
-    )
-  }, [gates, q])
+        group.includes(q) ||
+        (g.group?.toLowerCase().includes(q) ?? false) ||
+        (g.description?.toLowerCase().includes(q) ?? false)
+      )
+    })
+  }, [gates, q, t])
+
+  const gateGroups = useMemo(() => {
+    const map = new Map<string, LogicGate[]>()
+    for (const g of filteredGates) {
+      const key = g.group?.trim() || DEFAULT_GATE_GROUP
+      const list = map.get(key) ?? []
+      list.push(g)
+      map.set(key, list)
+    }
+    return sortGateGroups(map.keys(), t).map((key) => ({
+      key,
+      label: gateGroupLabel(key, t),
+      items: map.get(key)!,
+    }))
+  }, [filteredGates, t])
 
   const moduleCircuits = useMemo(() => {
     return circuits.filter((c) => c.id !== excludeCircuitId)
@@ -207,6 +233,7 @@ export function ModulePalette({
 
   const setAllSections = (open: boolean) => {
     const next: OpenMap = { gates: open }
+    for (const g of gateGroups) next[`gate:${g.key}`] = open
     for (const g of groups) next[g.key] = open
     setOpenSections(next)
     persistSections(next)
@@ -314,35 +341,57 @@ export function ModulePalette({
             onToggle={() => toggleSection('gates')}
           />
           {gatesOpen ? (
-            <div className="space-y-1 pl-1">
-              {filteredGates.length === 0 ? (
+            <div className="space-y-2 pl-0.5">
+              {gateGroups.length === 0 ? (
                 <p className="px-1 text-xs text-muted-foreground">{t('common.empty')}</p>
               ) : (
-                filteredGates.map((g) => {
-                  const payload: PalettePayload = {
-                    kind: 'gate',
-                    gateId: g.id,
-                    builtinKey: g.builtinKey,
-                    name: g.name,
-                  }
+                gateGroups.map((group) => {
+                  const sectionKey = `gate:${group.key}`
+                  const open = searching || (openSections[sectionKey] ?? true)
                   return (
-                    <button
-                      key={g.id}
-                      type="button"
-                      draggable
-                      onDragStart={(e) => onDragStart(e, payload)}
-                      onDragEnd={onDragEnd}
-                      onPointerDown={(e) => onPointerDownItem(e, payload)}
-                      className="flex w-full items-center gap-2 rounded-md border bg-background px-2 py-1.5 text-left text-sm hover:border-primary/40 hover:bg-muted/40"
+                    <div
+                      key={group.key}
+                      className="space-y-1 rounded-md bg-background/70 p-1"
                     >
-                      <GateSymbol
-                        gate={g}
-                        width={40}
-                        height={24}
-                        className="shrink-0 text-muted-foreground"
+                      <CategoryHeader
+                        open={open}
+                        title={group.label}
+                        onToggle={() => toggleSection(sectionKey)}
                       />
-                      <span className="min-w-0 truncate font-medium">{g.name}</span>
-                    </button>
+                      {open ? (
+                        <div className="ml-1 space-y-1 border-l-2 border-primary/25 pl-2">
+                          {group.items.map((g) => {
+                            const payload: PalettePayload = {
+                              kind: 'gate',
+                              gateId: g.id,
+                              builtinKey: g.builtinKey,
+                              name: g.name,
+                            }
+                            return (
+                              <button
+                                key={g.id}
+                                type="button"
+                                draggable
+                                onDragStart={(e) => onDragStart(e, payload)}
+                                onDragEnd={onDragEnd}
+                                onPointerDown={(e) => onPointerDownItem(e, payload)}
+                                className="flex w-full items-center gap-2 rounded-md border bg-background px-2 py-1.5 text-left text-sm hover:border-primary/40 hover:bg-muted/40"
+                              >
+                                <GateSymbol
+                                  gate={g}
+                                  width={40}
+                                  height={24}
+                                  className="shrink-0 text-muted-foreground"
+                                />
+                                <span className="min-w-0 truncate font-medium">
+                                  {g.name}
+                                </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
                   )
                 })
               )}

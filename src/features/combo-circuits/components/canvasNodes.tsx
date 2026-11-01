@@ -25,6 +25,8 @@ export type DeviceNodeData = {
   moduleKey?: string
   circuitId?: string
   drillable?: boolean
+  /** Explicit drill affordance (also available via node double-click). */
+  onDrill?: () => void
   inputBits?: Record<string, Bit>
   outputBits?: Record<string, Bit>
   highlight?: NodeHighlight
@@ -99,16 +101,17 @@ export function DeviceNode({ data }: NodeProps) {
   const d = data as DeviceNodeData
   const rows = Math.max(d.inputs.length, d.outputs.length, 1)
   const portAreaH = Math.max(32, rows * 20)
+  const canDrill = !!(d.drillable && d.onDrill)
 
   return (
     <div
       className={cn(
         'relative rounded-md border bg-card px-1.5 py-1 text-xs shadow-sm',
-        d.drillable && 'cursor-pointer hover:border-primary/50',
+        canDrill && 'cursor-pointer hover:border-primary/50',
         highlightClass(d.highlight),
       )}
       style={{ minWidth: 160, width: 160 }}
-      title={d.drillable ? 'Double-click to inspect internals' : undefined}
+      title={canDrill ? 'Click ⇅ or double-click to inspect internals' : undefined}
     >
       <div className="truncate px-1 text-center text-[10px] font-medium leading-tight">
         {d.label}
@@ -118,10 +121,23 @@ export function DeviceNode({ data }: NodeProps) {
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-75">
             <GateSymbol gate={d.gate} width={52} height={26} />
           </div>
-        ) : d.drillable ? (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-[9px] text-muted-foreground">
+        ) : canDrill ? (
+          <button
+            type="button"
+            className="nodrag nopan absolute inset-0 z-[5] flex items-center justify-center text-[9px] text-muted-foreground hover:text-primary"
+            title="Inspect internals"
+            aria-label="Inspect internals"
+            onClick={(e) => {
+              e.stopPropagation()
+              d.onDrill?.()
+            }}
+            onDoubleClick={(e) => {
+              e.stopPropagation()
+              d.onDrill?.()
+            }}
+          >
             ⇅
-          </div>
+          </button>
         ) : null}
         {d.inputs.map((pin, i) => {
           const bit = d.inputBits?.[pin.id]

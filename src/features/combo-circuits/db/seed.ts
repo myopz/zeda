@@ -11,7 +11,7 @@ import {
 } from '../types'
 
 /** Bump when gate-level layout spacing changes so IndexedDB seeds re-apply. */
-export const CIRCUIT_LAYOUT_REV = 7
+export const CIRCUIT_LAYOUT_REV = 8
 
 const CIRCUIT_IDS: Record<ModuleKey, string> = {
   half_adder: snowflake.fixed(101),
@@ -49,15 +49,15 @@ const DISPLAY_NAMES: Record<ModuleKey, string> = {
 
 const DESCRIPTIONS: Record<ModuleKey, string> = {
   half_adder: 'Gate-level: XOR + AND',
-  full_adder: 'Gate-level: 2×XOR + 2×AND + OR',
+  full_adder: '2× half adder + OR',
   encoder_4_2: 'Gate-level OR-tree encoder',
   priority_encoder_8_3: 'Gate-level priority one-hot encoder',
   decoder_2_4: 'Gate-level NOT + AND decoder',
   decoder_3_8: 'Gate-level 3–8 AND decoder',
   seven_seg_decoder: 'Gate-level hex SOP → a–g (common cathode)',
-  '74ls138': 'Gate-level enable + decode, active-low Y',
-  '74ls148': 'Gate-level active-low priority encoder',
-  '74ls283': '4× full adder (drill into gates)',
+  '74ls138': 'Enable + decoder_3_8 + active-low Y',
+  '74ls148': 'Active-low wrap around priority encoder',
+  '74ls283': '4× full adder modules',
 }
 
 const GROUPS: Record<ModuleKey, ModuleCategory> = {

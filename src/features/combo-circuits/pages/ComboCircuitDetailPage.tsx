@@ -1,9 +1,19 @@
-import { ArrowLeft, ChevronRight, Copy, Redo2, Save, Undo2 } from 'lucide-react'
+import {
+  ArrowLeft,
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  Copy,
+  Redo2,
+  Save,
+  Undo2,
+} from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useLocation, useNavigate, useParams } from 'react-router'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { listGates } from '@/features/logic-gates/db/repository'
 import type { LogicGate } from '@/features/logic-gates/types'
 import { useHistoryState } from '@/features/logic-gates/lib/history'
@@ -11,6 +21,8 @@ import { defaultPinName } from '@/features/logic-gates/lib/bool-engine'
 import { createId, cn } from '@/lib/utils'
 import { CircuitCanvas } from '../components/CircuitCanvas'
 import { CircuitSidePanel } from '../components/CircuitSidePanel'
+import { TimingDiagram } from '../components/TimingDiagram'
+import { TruthTablePanel } from '../components/TruthTablePanel'
 import {
   duplicateCircuit,
   getCircuit,
@@ -72,6 +84,13 @@ export function ComboCircuitDetailPage() {
   const [sideCollapsed, setSideCollapsed] = useState(() =>
     readCollapsed(SIDE_COLLAPSE_KEY, true),
   )
+  const [analysisTab, setAnalysisTab] = useState('table')
+  // Always start expanded when entering; collapse is not persisted.
+  const [analysisCollapsed, setAnalysisCollapsed] = useState(false)
+
+  useEffect(() => {
+    setAnalysisCollapsed(false)
+  }, [id])
 
   useEffect(() => {
     let cancelled = false
@@ -187,10 +206,20 @@ export function ComboCircuitDetailPage() {
   const onDrillModule = useCallback(
     (moduleKey: string) => {
       const internals = buildModuleInternals(moduleKey, gates)
-      if (!internals) return
+      if (!internals) {
+        console.warn(`[clc] no internals for module "${moduleKey}"`)
+        return
+      }
       setDrillStack((prev) => [
         ...prev,
-        { key: `module:${moduleKey}`, label: moduleLabel(moduleKey), circuit: internals },
+        {
+          key: `module:${moduleKey}:${prev.length}`,
+          label: moduleLabel(moduleKey),
+          circuit: {
+            ...internals,
+            id: `${internals.id}#${prev.length}`,
+          },
+        },
       ])
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -442,7 +471,7 @@ export function ComboCircuitDetailPage() {
           </span>
         </div>
 
-        <div className="flex h-[min(640px,75vh)] min-h-[400px]">
+        <div className="flex h-[min(720px,82vh)] min-h-[400px]">
           <div className={cn('shrink-0', sideCollapsed ? 'w-10' : 'w-[240px]')}>
             <CircuitSidePanel
               circuit={rootCircuit}
@@ -471,11 +500,77 @@ export function ComboCircuitDetailPage() {
               nodeOutBits={evalState.ok ? evalState.nodeOutBits : undefined}
               onDrillModule={onDrillModule}
               onDrillCircuit={onDrillCircuit}
-              onToggleInput={onToggleInput}
+              onToggleInput={inDrill ? undefined : onToggleInput}
             />
           </div>
         </div>
       </div>
+
+      {!inDrill && rootCircuit ? (
+        <div className="rounded-lg border bg-card">
+          <Tabs value={analysisTab} onValueChange={setAnalysisTab}>
+            <div
+              className="flex cursor-pointer flex-wrap items-center gap-2 px-3 py-2"
+              role="button"
+              tabIndex={0}
+              aria-expanded={!analysisCollapsed}
+              aria-label={
+                analysisCollapsed
+                  ? t('circuits.analysisExpand')
+                  : t('circuits.analysisCollapse')
+              }
+              onClick={() => setAnalysisCollapsed((c) => !c)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  setAnalysisCollapsed((c) => !c)
+                }
+              }}
+            >
+              <span className="inline-flex h-7 items-center gap-1 px-2 text-xs font-medium">
+                {analysisCollapsed ? (
+                  <ChevronDown className="size-3.5" />
+                ) : (
+                  <ChevronUp className="size-3.5" />
+                )}
+                {t('circuits.analysis')}
+              </span>
+              {!analysisCollapsed ? (
+                <TabsList
+                  className="h-8"
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
+                >
+                  <TabsTrigger value="table" className="text-xs">
+                    {t('circuits.funcTable')}
+                  </TabsTrigger>
+                  <TabsTrigger value="timing" className="text-xs">
+                    {t('circuits.timing')}
+                  </TabsTrigger>
+                </TabsList>
+              ) : null}
+            </div>
+            {!analysisCollapsed ? (
+              <div className="border-t px-3 py-3">
+                <TabsContent value="table" className="mt-0">
+                  <TruthTablePanel
+                    circuit={rootCircuit}
+                    gates={gates}
+                    circuits={[...circuitMap.values()]}
+                  />
+                </TabsContent>
+                <TabsContent value="timing" className="mt-0">
+                  <TimingDiagram
+                    circuit={rootCircuit}
+                    gates={gates}
+                    circuits={[...circuitMap.values()]}
+                  />
+                </TabsContent>
+              </div>
+            ) : null}
+          </Tabs>
+        </div>
+      ) : null}
     </div>
   )
 }

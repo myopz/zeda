@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { TimingWave } from '@/components/timing-wave'
 import { Button } from '@/components/ui/button'
 import type { LogicGate } from '@/features/logic-gates/types'
 import { cn } from '@/lib/utils'
@@ -63,12 +64,10 @@ export function TimingDiagram({ circuit, gates, className }: Props) {
   const { t } = useTranslation()
   const [cycles, setCycles] = useState(8)
   const [base, setBase] = useState(() => defaultSlot(circuit))
-  const [runKey, setRunKey] = useState(0)
 
   const resolveGate = useMemo(() => resolveGateFactory(gates), [gates])
 
   const result = useMemo(() => {
-    void runKey
     try {
       const slots = buildClockStimulus(circuit, base, cycles)
       let sim = createInitialSimState(circuit)
@@ -91,7 +90,7 @@ export function TimingDiagram({ circuit, gates, className }: Props) {
             : String(err),
       }
     }
-  }, [circuit, base, cycles, resolveGate, runKey])
+  }, [circuit, base, cycles, resolveGate])
 
   const tracks = useMemo(() => {
     if (!result.ok) return []
@@ -142,9 +141,6 @@ export function TimingDiagram({ circuit, gates, className }: Props) {
         >
           +
         </Button>
-        <Button type="button" size="sm" onClick={() => setRunKey((k) => k + 1)}>
-          {t('flipflops.timingRun')}
-        </Button>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -185,19 +181,7 @@ export function TimingDiagram({ circuit, gates, className }: Props) {
                   <div className="w-14 shrink-0 font-mono text-[10px] text-muted-foreground">
                     {track.label}
                   </div>
-                  <svg
-                    viewBox={`0 0 ${track.bits.length * 20} 28`}
-                    className="h-7 w-full"
-                    preserveAspectRatio="none"
-                  >
-                    <path
-                      d={wavePath(track.bits)}
-                      fill="none"
-                      stroke={track.role === 'in' ? '#f59e0b' : '#10b981'}
-                      strokeWidth={2}
-                      vectorEffect="non-scaling-stroke"
-                    />
-                  </svg>
+                  <TimingWave bits={track.bits} role={track.role} />
                 </div>
               ))}
             </div>
@@ -206,22 +190,4 @@ export function TimingDiagram({ circuit, gates, className }: Props) {
       )}
     </div>
   )
-}
-
-function wavePath(bits: Bit[]): string {
-  if (bits.length === 0) return ''
-  const w = 20
-  const yHigh = 6
-  const yLow = 22
-  let d = `M 0 ${bits[0] === 1 ? yHigh : yLow}`
-  for (let i = 0; i < bits.length; i += 1) {
-    const y = bits[i] === 1 ? yHigh : yLow
-    const x0 = i * w
-    const x1 = (i + 1) * w
-    if (i > 0 && bits[i] !== bits[i - 1]) {
-      d += ` L ${x0} ${bits[i - 1] === 1 ? yHigh : yLow} L ${x0} ${y}`
-    }
-    d += ` L ${x1} ${y}`
-  }
-  return d
 }

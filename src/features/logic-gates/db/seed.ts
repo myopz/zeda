@@ -1,6 +1,9 @@
 import { createId } from '@/lib/utils'
 import { snowflake } from '@/lib/snowflake'
-import type { BuiltinKey, LogicGate } from '../types'
+import { DEFAULT_GATE_GROUP, type BuiltinKey, type LogicGate } from '../types'
+
+/** Bump when seed meta (e.g. group) changes so IndexedDB seeds re-apply. */
+export const GATE_META_REV = 1
 
 function pin(name: string, id?: string) {
   return { id: id ?? createId(), name }
@@ -67,6 +70,7 @@ function buildBuiltin(
     description,
     kind: 'builtin',
     builtinKey: key,
+    group: 'basic',
     inputs,
     outputs,
     formulas: {
@@ -94,6 +98,7 @@ export function createAoiExampleGate(): LogicGate {
     name: 'AOI',
     description: 'AND-OR-INVERT combination: NOT((A·B)+(C·D))',
     kind: 'custom',
+    group: DEFAULT_GATE_GROUP,
     inputs,
     outputs,
     formulas: { [outId]: formula },
@@ -129,6 +134,7 @@ export function createBlankCustomGate(name: string): LogicGate {
     name,
     description: '',
     kind: 'custom',
+    group: DEFAULT_GATE_GROUP,
     inputs,
     outputs,
     formulas: { [outId]: '0' },

@@ -224,6 +224,8 @@ function buildFlowGraph(
   moduleLabel?: (key: string) => string,
   circuitLabel?: (c: ComboCircuit) => string,
   onToggleInput?: (pinId: string) => void,
+  onDrillModule?: (moduleKey: string) => void,
+  onDrillCircuit?: (circuitId: string) => void,
 ): { nodes: Node[]; edges: Edge[] } {
   const gateById = new Map(gates.map((g) => [g.id, g]))
   const gateByKey = new Map<string, LogicGate>()
@@ -321,6 +323,12 @@ function buildFlowGraph(
       if (b !== undefined) inputBits[pin.id] = b
     }
     const outputBits = nodeOutBits?.[node.id] ?? {}
+    const onDrill =
+      drillable && moduleKey && onDrillModule
+        ? () => onDrillModule(moduleKey)
+        : drillable && circuitId && onDrillCircuit
+          ? () => onDrillCircuit(circuitId)
+          : undefined
 
     nodes.push({
       id: node.id,
@@ -333,6 +341,7 @@ function buildFlowGraph(
         moduleKey,
         circuitId,
         drillable,
+        onDrill,
         inputBits,
         outputBits,
         gate: gate
@@ -393,7 +402,7 @@ function CanvasInner({
   className,
 }: Props) {
   const { t } = useTranslation()
-  const { screenToFlowPosition } = useReactFlow()
+  const { screenToFlowPosition, fitView } = useReactFlow()
   const [selected, setSelected] = useState<{ nodes: string[]; edges: string[] }>({
     nodes: [],
     edges: [],
@@ -438,6 +447,8 @@ function CanvasInner({
         moduleLabel,
         circuitLabel,
         onToggleInput,
+        onDrillModule,
+        onDrillCircuit,
       ),
     [
       circuit,
@@ -448,8 +459,18 @@ function CanvasInner({
       moduleLabel,
       circuitLabel,
       onToggleInput,
+      onDrillModule,
+      onDrillCircuit,
     ],
   )
+
+  // Re-fit when drilling in/out — otherwise the new netlist stays off-camera.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      fitView({ padding: 0.18, duration: 200 })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [circuit.id, fitView])
 
   const [nodes, setNodes] = useState<Node[]>(() =>
     paintSelection(graph.nodes, graph.edges, [], []).nodes,

@@ -367,31 +367,27 @@ function buildHalfAdder(gates: LogicGate[]): ComboCircuit {
   return finish('half_adder', inputs, outputs, b, 'XOR + AND')
 }
 
-// —— full adder: 2×XOR + 2×AND + OR ——
+// —— full adder: 2× half_adder + OR ——
 function buildFullAdder(gates: LogicGate[]): ComboCircuit {
   const { inputs, outputs } = ioPins('full_adder')
   const b = createBuilder(gates, 'fa')
-  const x1 = addGate(b, 'xor', 200, 40, 'x1')
-  const x2 = addGate(b, 'xor', 200 + COL, 40, 'x2')
-  const a1 = addGate(b, 'and', 200, 40 + ROW, 'a1')
-  const a2 = addGate(b, 'and', 200 + COL, 40 + ROW, 'a2')
-  const o1 = addGate(b, 'or', 200 + COL * 2, 40 + ROW, 'o1')
+  const haKey: ModuleKey = 'half_adder'
 
-  fanout(b, io(findPin(inputs, 'A')), [gIn(x1.id, x1.gate, 'A'), gIn(a1.id, a1.gate, 'A')])
-  fanout(b, io(findPin(inputs, 'B')), [gIn(x1.id, x1.gate, 'B'), gIn(a1.id, a1.gate, 'B')])
-  fanout(b, gOut(x1.id, x1.gate, 'Y'), [
-    gIn(x2.id, x2.gate, 'A'),
-    gIn(a2.id, a2.gate, 'A'),
-  ])
-  fanout(b, io(findPin(inputs, 'Cin')), [
-    gIn(x2.id, x2.gate, 'B'),
-    gIn(a2.id, a2.gate, 'B'),
-  ])
-  connect(b, gOut(x2.id, x2.gate, 'Y'), io(findPin(outputs, 'Sum')))
-  connect(b, gOut(a1.id, a1.gate, 'Y'), gIn(o1.id, o1.gate, 'A'))
-  connect(b, gOut(a2.id, a2.gate, 'Y'), gIn(o1.id, o1.gate, 'B'))
-  connect(b, gOut(o1.id, o1.gate, 'Y'), io(findPin(outputs, 'Cout')))
-  return finish('full_adder', inputs, outputs, b, '2×XOR + 2×AND + OR')
+  const ha1 = addModule(b, haKey, COL, ROW, 'ha1')
+  connect(b, io(findPin(inputs, 'A')), mIn(ha1, haKey, 'A'))
+  connect(b, io(findPin(inputs, 'B')), mIn(ha1, haKey, 'B'))
+
+  const ha2 = addModule(b, haKey, COL * 2, ROW, 'ha2')
+  connect(b, mOut(ha1, haKey, 'Sum'), mIn(ha2, haKey, 'A'))
+  connect(b, io(findPin(inputs, 'Cin')), mIn(ha2, haKey, 'B'))
+
+  const coutOr = addGate(b, 'or', COL * 3, ROW + ROW, 'cout')
+  connect(b, mOut(ha1, haKey, 'Cout'), gIn(coutOr.id, coutOr.gate, 'A'))
+  connect(b, mOut(ha2, haKey, 'Cout'), gIn(coutOr.id, coutOr.gate, 'B'))
+
+  connect(b, mOut(ha2, haKey, 'Sum'), io(findPin(outputs, 'Sum')))
+  connect(b, gOut(coutOr.id, coutOr.gate, 'Y'), io(findPin(outputs, 'Cout')))
+  return finish('full_adder', inputs, outputs, b, '2× half adder + OR')
 }
 
 // —— 4→2 encoder ——
@@ -579,19 +575,14 @@ function buildSevenSeg(gates: LogicGate[]): ComboCircuit {
   return finish('seven_seg_decoder', inputs, outputs, b, 'Hex SOP → a–g')
 }
 
-// —— 74LS138: enable + 3–8 decode, active-low Y ——
+// —— 74LS138: enable + decoder_3_8 + active-low Y ——
 function build74ls138(gates: LogicGate[]): ComboCircuit {
   const { inputs, outputs } = ioPins('74ls138')
   const b = createBuilder(gates, 'ls138')
+  const decKey: ModuleKey = 'decoder_3_8'
 
-  const nC = addGate(b, 'not', 140, 40, 'nc')
-  const nB = addGate(b, 'not', 140, 40 + ROW, 'nb')
-  const nA = addGate(b, 'not', 140, 40 + ROW * 2, 'na')
-  const nG2A = addGate(b, 'not', 140, 40 + ROW * 3, 'ng2a')
-  const nG2B = addGate(b, 'not', 140, 40 + ROW * 4, 'ng2b')
-  connect(b, io(findPin(inputs, 'C')), gIn(nC.id, nC.gate, 'A'))
-  connect(b, io(findPin(inputs, 'B')), gIn(nB.id, nB.gate, 'A'))
-  connect(b, io(findPin(inputs, 'A')), gIn(nA.id, nA.gate, 'A'))
+  const nG2A = addGate(b, 'not', COL, ROW * 3, 'ng2a')
+  const nG2B = addGate(b, 'not', COL, ROW * 4, 'ng2b')
   connect(b, io(findPin(inputs, 'G2A')), gIn(nG2A.id, nG2A.gate, 'A'))
   connect(b, io(findPin(inputs, 'G2B')), gIn(nG2B.id, nG2B.gate, 'A'))
   const en = andReduce(
@@ -601,101 +592,98 @@ function build74ls138(gates: LogicGate[]): ComboCircuit {
       gOut(nG2A.id, nG2A.gate, 'Y'),
       gOut(nG2B.id, nG2B.gate, 'Y'),
     ],
-    140 + COL,
-    40 + ROW * 3,
+    COL * 2,
+    ROW * 3,
   )
 
-  const lit = (bit: 0 | 1, name: 'C' | 'B' | 'A', ng: { id: string; gate: LogicGate }) =>
-    bit === 0 ? gOut(ng.id, ng.gate, 'Y') : io(findPin(inputs, name))
+  // C/B/A → decoder A2/A1/A0
+  const dec = addModule(b, decKey, COL * 2, ROW, 'dec')
+  connect(b, io(findPin(inputs, 'C')), mIn(dec, decKey, 'A2'))
+  connect(b, io(findPin(inputs, 'B')), mIn(dec, decKey, 'A1'))
+  connect(b, io(findPin(inputs, 'A')), mIn(dec, decKey, 'A0'))
 
   for (let i = 0; i < 8; i += 1) {
-    const c = ((i >> 2) & 1) as 0 | 1
-    const bb = ((i >> 1) & 1) as 0 | 1
-    const a = (i & 1) as 0 | 1
-    const decoded = andReduce(
-      b,
-      [en, lit(c, 'C', nC), lit(bb, 'B', nB), lit(a, 'A', nA)],
-      140 + COL * 2,
-      40 + i * ROW,
-    )
-    const inv = addGate(b, 'not', 140 + COL * 4, 40 + i * ROW, `y${i}`)
-    connect(b, decoded, gIn(inv.id, inv.gate, 'A'))
+    const gated = addGate(b, 'and', COL * 4, ROW + i * ROW, `en${i}`)
+    connect(b, mOut(dec, decKey, `Y${i}`), gIn(gated.id, gated.gate, 'A'))
+    connect(b, en, gIn(gated.id, gated.gate, 'B'))
+    const inv = addGate(b, 'not', COL * 5, ROW + i * ROW, `y${i}`)
+    connect(b, gOut(gated.id, gated.gate, 'Y'), gIn(inv.id, inv.gate, 'A'))
     connect(b, gOut(inv.id, inv.gate, 'Y'), io(findPin(outputs, `Y${i}`)))
   }
-  return finish('74ls138', inputs, outputs, b, 'Enable + decode + active-low')
+  return finish(
+    '74ls138',
+    inputs,
+    outputs,
+    b,
+    'Enable + decoder_3_8 + active-low Y',
+  )
 }
 
-// —— 74LS148: invert → priority encoder → invert ——
+// —— 74LS148: invert → priority_encoder_8_3 → invert + GS/EO ——
 function build74ls148(gates: LogicGate[]): ComboCircuit {
   const { inputs, outputs } = ioPins('74ls148')
   const b = createBuilder(gates, 'ls148')
+  const peKey: ModuleKey = 'priority_encoder_8_3'
 
   // Active-low in → active-high internal
   const invI: { id: string; gate: LogicGate }[] = []
   for (let i = 0; i < 8; i += 1) {
-    const g = addGate(b, 'not', 120, 40 + i * ROW, `ii${i}`)
+    const g = addGate(b, 'not', COL, ROW + i * ROW, `ii${i}`)
     connect(b, io(findPin(inputs, `I${i}`)), gIn(g.id, g.gate, 'A'))
     invI.push(g)
   }
-  const nEI = addGate(b, 'not', 120, 40 + ROW * 8, 'nei')
+  const nEI = addGate(b, 'not', COL, ROW + ROW * 8, 'nei')
   connect(b, io(findPin(inputs, 'EI')), gIn(nEI.id, nEI.gate, 'A'))
   const enabled = gOut(nEI.id, nEI.gate, 'Y')
 
-  // Mask inputs with enable
+  // Mask inputs with enable, then feed textbook priority encoder.
   const I: WireEndpoint[] = []
   for (let i = 0; i < 8; i += 1) {
-    const g = addGate(b, 'and', 120 + COL, 40 + i * ROW, `ei${i}`)
+    const g = addGate(b, 'and', COL * 2, ROW + i * ROW, `ei${i}`)
     connect(b, gOut(invI[i]!.id, invI[i]!.gate, 'Y'), gIn(g.id, g.gate, 'A'))
     connect(b, enabled, gIn(g.id, g.gate, 'B'))
     I.push(gOut(g.id, g.gate, 'Y'))
   }
 
-  // Priority one-hots P7..P1; ~Ii only i=2..7 (~I0/~I1 only served unused P0).
-  const nY: WireEndpoint[] = new Array(8)
-  for (let i = 2; i < 8; i += 1) {
-    const g = addGate(b, 'not', 120 + COL * 2, 40 + i * ROW, `pn${i}`)
-    connect(b, I[i]!, gIn(g.id, g.gate, 'A'))
-    nY[i] = gOut(g.id, g.gate, 'Y')
-  }
-  const P: WireEndpoint[] = new Array(8)
-  P[7] = I[7]!
-  for (let i = 6; i >= 1; i -= 1) {
-    const higherNots: WireEndpoint[] = []
-    for (let h = i + 1; h < 8; h += 1) higherNots.push(nY[h]!)
-    P[i] = andReduce(b, [I[i]!, ...higherNots], 120 + COL * 3, 40 + (6 - i) * ROW)
+  const pe = addModule(b, peKey, COL * 4, ROW * 2, 'pe')
+  for (let i = 0; i < 8; i += 1) {
+    connect(b, I[i]!, mIn(pe, peKey, `I${i}`))
   }
 
-  const y2 = orReduce(b, [P[4]!, P[5]!, P[6]!, P[7]!], 120 + COL * 5, 40)
-  const y1 = orReduce(b, [P[2]!, P[3]!, P[6]!, P[7]!], 120 + COL * 5, 40 + ROW * 2)
-  const y0 = orReduce(b, [P[1]!, P[3]!, P[5]!, P[7]!], 120 + COL * 5, 40 + ROW * 4)
-  const any = orReduce(b, I, 120 + COL * 5, 40 + ROW * 6)
-
-  // Active-low outputs A2..A0
-  for (const [name, src, yi] of [
-    ['A2', y2, 0],
-    ['A1', y1, 1],
-    ['A0', y0, 2],
+  // Active-low address outputs
+  for (const [outName, peOut, yi] of [
+    ['A2', 'Y2', 0],
+    ['A1', 'Y1', 1],
+    ['A0', 'Y0', 2],
   ] as const) {
-    const inv = addGate(b, 'not', 120 + COL * 7, 40 + yi * ROW, name)
-    connect(b, src, gIn(inv.id, inv.gate, 'A'))
-    connect(b, gOut(inv.id, inv.gate, 'Y'), io(findPin(outputs, name)))
+    const inv = addGate(b, 'not', COL * 6, ROW + yi * ROW, outName)
+    connect(b, mOut(pe, peKey, peOut), gIn(inv.id, inv.gate, 'A'))
+    connect(b, gOut(inv.id, inv.gate, 'Y'), io(findPin(outputs, outName)))
   }
 
-  // GS = 0 when enabled and any input; else 1 → GS = NOT(enabled AND any)
-  const gsAnd = addGate(b, 'and', 120 + COL * 6, 40 + ROW * 7, 'gsand')
+  const any = mOut(pe, peKey, 'V')
+
+  // GS = NOT(enabled AND any)
+  const gsAnd = addGate(b, 'and', COL * 5, ROW + ROW * 7, 'gsand')
   connect(b, enabled, gIn(gsAnd.id, gsAnd.gate, 'A'))
   connect(b, any, gIn(gsAnd.id, gsAnd.gate, 'B'))
-  const gs = addGate(b, 'not', 120 + COL * 7, 40 + ROW * 7, 'gs')
+  const gs = addGate(b, 'not', COL * 6, ROW + ROW * 7, 'gs')
   connect(b, gOut(gsAnd.id, gsAnd.gate, 'Y'), gIn(gs.id, gs.gate, 'A'))
   connect(b, gOut(gs.id, gs.gate, 'Y'), io(findPin(outputs, 'GS')))
 
-  // EO = EI OR any (active-low EI semantics)
-  const eo = addGate(b, 'or', 120 + COL * 7, 40 + ROW * 8, 'eo')
+  // EO = EI OR any
+  const eo = addGate(b, 'or', COL * 6, ROW + ROW * 8, 'eo')
   connect(b, io(findPin(inputs, 'EI')), gIn(eo.id, eo.gate, 'A'))
   connect(b, any, gIn(eo.id, eo.gate, 'B'))
   connect(b, gOut(eo.id, eo.gate, 'Y'), io(findPin(outputs, 'EO')))
 
-  return finish('74ls148', inputs, outputs, b, 'Active-low priority encoder')
+  return finish(
+    '74ls148',
+    inputs,
+    outputs,
+    b,
+    'Active-low wrap around priority_encoder_8_3',
+  )
 }
 
 // —— 74LS283: 4× full_adder ——

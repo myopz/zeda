@@ -1,4 +1,13 @@
-import { ArrowLeft, ChevronRight, Copy, Redo2, Save, Undo2 } from 'lucide-react'
+import {
+  ArrowLeft,
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  Copy,
+  Redo2,
+  Save,
+  Undo2,
+} from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useLocation, useNavigate, useParams } from 'react-router'
@@ -96,6 +105,12 @@ export function FlipFlopDetailPage() {
     readCollapsed(SIDE_COLLAPSE_KEY, true),
   )
   const [analysisTab, setAnalysisTab] = useState('table')
+  // Always start expanded when entering; collapse is not persisted.
+  const [analysisCollapsed, setAnalysisCollapsed] = useState(false)
+
+  useEffect(() => {
+    setAnalysisCollapsed(false)
+  }, [id])
 
   useEffect(() => {
     let cancelled = false
@@ -509,7 +524,7 @@ export function FlipFlopDetailPage() {
           </span>
         </div>
 
-        <div className="flex h-[min(520px,60vh)] min-h-[360px]">
+        <div className="flex h-[min(720px,82vh)] min-h-[360px]">
           <div className={cn('shrink-0', sideCollapsed ? 'w-10' : 'w-[240px]')}>
             <FfSidePanel
               circuit={rootCircuit}
@@ -542,23 +557,66 @@ export function FlipFlopDetailPage() {
         </div>
       </div>
 
-      {!inDrill ? (
-        <div className="rounded-lg border bg-card p-3">
+      {!inDrill && rootCircuit ? (
+        <div className="rounded-lg border bg-card">
           <Tabs value={analysisTab} onValueChange={setAnalysisTab}>
-            <TabsList>
-              <TabsTrigger value="table">{t('flipflops.funcTable')}</TabsTrigger>
-              <TabsTrigger value="state">{t('flipflops.stateDiagram')}</TabsTrigger>
-              <TabsTrigger value="timing">{t('flipflops.timing')}</TabsTrigger>
-            </TabsList>
-            <TabsContent value="table" className="mt-3">
-              <FuncTablePanel moduleKey={moduleKey} />
-            </TabsContent>
-            <TabsContent value="state" className="mt-3">
-              <StateDiagramView moduleKey={moduleKey} />
-            </TabsContent>
-            <TabsContent value="timing" className="mt-3">
-              <TimingDiagram circuit={rootCircuit} gates={gates} />
-            </TabsContent>
+            <div
+              className="flex cursor-pointer flex-wrap items-center gap-2 px-3 py-2"
+              role="button"
+              tabIndex={0}
+              aria-expanded={!analysisCollapsed}
+              aria-label={
+                analysisCollapsed
+                  ? t('flipflops.analysisExpand')
+                  : t('flipflops.analysisCollapse')
+              }
+              onClick={() => setAnalysisCollapsed((c) => !c)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  setAnalysisCollapsed((c) => !c)
+                }
+              }}
+            >
+              <span className="inline-flex h-7 items-center gap-1 px-2 text-xs font-medium">
+                {analysisCollapsed ? (
+                  <ChevronDown className="size-3.5" />
+                ) : (
+                  <ChevronUp className="size-3.5" />
+                )}
+                {t('flipflops.analysis')}
+              </span>
+              {!analysisCollapsed ? (
+                <TabsList
+                  className="h-8"
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
+                >
+                  <TabsTrigger value="table" className="text-xs">
+                    {t('flipflops.funcTable')}
+                  </TabsTrigger>
+                  <TabsTrigger value="state" className="text-xs">
+                    {t('flipflops.stateDiagram')}
+                  </TabsTrigger>
+                  <TabsTrigger value="timing" className="text-xs">
+                    {t('flipflops.timing')}
+                  </TabsTrigger>
+                </TabsList>
+              ) : null}
+            </div>
+            {!analysisCollapsed ? (
+              <div className="border-t px-3 py-3">
+                <TabsContent value="table" className="mt-0">
+                  <FuncTablePanel moduleKey={moduleKey} />
+                </TabsContent>
+                <TabsContent value="state" className="mt-0">
+                  <StateDiagramView moduleKey={moduleKey} />
+                </TabsContent>
+                <TabsContent value="timing" className="mt-0">
+                  <TimingDiagram circuit={rootCircuit} gates={gates} />
+                </TabsContent>
+              </div>
+            ) : null}
           </Tabs>
         </div>
       ) : null}

@@ -1,4 +1,9 @@
-import type { Bit, GatePin, LogicGate } from '../types'
+import {
+  DEFAULT_GATE_GROUP,
+  type Bit,
+  type GatePin,
+  type LogicGate,
+} from '../types'
 
 export class FormulaError extends Error {
   constructor(message: string) {
@@ -470,12 +475,18 @@ export function normalizeGate(raw: LegacyGate): LogicGate {
     if (!(out.id in formulas)) formulas[out.id] = '0'
   }
 
+  const kind = raw.kind ?? 'custom'
+  const groupRaw =
+    typeof (raw as { group?: unknown }).group === 'string'
+      ? (raw as { group: string }).group.trim()
+      : ''
   return {
     id: raw.id!,
     name: raw.name ?? 'Gate',
     description: raw.description,
-    kind: raw.kind ?? 'custom',
+    kind,
     builtinKey: raw.builtinKey,
+    group: groupRaw || (kind === 'builtin' ? 'basic' : DEFAULT_GATE_GROUP),
     inputs: raw.inputs,
     outputs: raw.outputs,
     formulas,

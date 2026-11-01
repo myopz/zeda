@@ -3,7 +3,14 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Input } from '@/components/ui/input'
 import { GateSymbol } from '@/features/logic-gates/components/GateSymbol'
-import type { LogicGate } from '@/features/logic-gates/types'
+import {
+  gateGroupLabel,
+  sortGateGroups,
+} from '@/features/logic-gates/lib/groups'
+import {
+  DEFAULT_GATE_GROUP,
+  type LogicGate,
+} from '@/features/logic-gates/types'
 import { cn } from '@/lib/utils'
 import { catalogKeyFromFfId } from '../db/seed'
 import { ffGroupLabel, PRESET_FF_GROUPS, sortFfGroups } from '../lib/groups'
@@ -137,12 +144,31 @@ export function FfModulePalette({
 
   const filteredGates = useMemo(() => {
     if (!q) return gates
-    return gates.filter(
-      (g) =>
+    return gates.filter((g) => {
+      const group = gateGroupLabel(g.group || DEFAULT_GATE_GROUP, t).toLowerCase()
+      return (
         g.name.toLowerCase().includes(q) ||
-        g.builtinKey?.toLowerCase().includes(q),
-    )
-  }, [gates, q])
+        g.builtinKey?.toLowerCase().includes(q) ||
+        group.includes(q) ||
+        (g.group?.toLowerCase().includes(q) ?? false)
+      )
+    })
+  }, [gates, q, t])
+
+  const gateGroups = useMemo(() => {
+    const map = new Map<string, LogicGate[]>()
+    for (const g of filteredGates) {
+      const key = g.group?.trim() || DEFAULT_GATE_GROUP
+      const list = map.get(key) ?? []
+      list.push(g)
+      map.set(key, list)
+    }
+    return sortGateGroups(map.keys(), t).map((key) => ({
+      key,
+      label: gateGroupLabel(key, t),
+      items: map.get(key)!,
+    }))
+  }, [filteredGates, t])
 
   const groups = useMemo(() => {
     const map = new Map<string, PaletteItem[]>()
@@ -271,30 +297,52 @@ export function FfModulePalette({
             title={t('flipflops.paletteGates')}
             onToggle={() => toggle('gates')}
           />
-          {open.gates !== false ? (
-            <div className="mt-1 space-y-0.5">
-              {filteredGates.map((g) => {
-                const payload: PalettePayload = {
-                  kind: 'gate',
-                  gateId: g.id,
-                  builtinKey: g.builtinKey,
-                  name: g.name,
-                }
+          {open.gates !== false
+            ? gateGroups.map((group) => {
+                const catKey = `gate:${group.key}`
+                const catOpen = open[catKey] !== false
                 return (
-                  <div
-                    key={g.id}
-                    draggable
-                    onDragStart={(e) => onHtmlDragStart(e, payload)}
-                    onPointerDown={(e) => startDrag(e, payload)}
-                    className="flex cursor-grab items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted active:cursor-grabbing"
-                  >
-                    <GateSymbol gate={g} width={36} height={18} />
-                    <span className="truncate">{g.name}</span>
+                  <div key={group.key} className="mt-1">
+                    <button
+                      type="button"
+                      onClick={() => toggle(catKey)}
+                      className="flex w-full items-center gap-1 px-2 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                    >
+                      {catOpen ? (
+                        <ChevronDown className="size-3" />
+                      ) : (
+                        <ChevronRight className="size-3" />
+                      )}
+                      {group.label}
+                    </button>
+                    {catOpen ? (
+                      <div className="ml-2 space-y-0.5 border-l border-border pl-1">
+                        {group.items.map((g) => {
+                          const payload: PalettePayload = {
+                            kind: 'gate',
+                            gateId: g.id,
+                            builtinKey: g.builtinKey,
+                            name: g.name,
+                          }
+                          return (
+                            <div
+                              key={g.id}
+                              draggable
+                              onDragStart={(e) => onHtmlDragStart(e, payload)}
+                              onPointerDown={(e) => startDrag(e, payload)}
+                              className="flex cursor-grab items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted active:cursor-grabbing"
+                            >
+                              <GateSymbol gate={g} width={36} height={18} />
+                              <span className="truncate">{g.name}</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ) : null}
                   </div>
                 )
-              })}
-            </div>
-          ) : null}
+              })
+            : null}
         </div>
 
         <div>

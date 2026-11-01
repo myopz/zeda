@@ -107,20 +107,24 @@ export function DeviceNode({ data }: NodeProps) {
     <div
       className={cn(
         'relative rounded-md border bg-card px-1.5 py-1 text-xs shadow-sm',
-        canDrill && 'hover:border-primary/50',
+        canDrill && 'cursor-pointer hover:border-primary/50',
         highlightClass(d.highlight),
       )}
       style={{ minWidth: 160, width: 160 }}
       title={canDrill ? 'Click ⇅ or double-click to inspect internals' : undefined}
     >
-      <div className="flex items-center gap-0.5 px-0.5">
-        <div className="min-w-0 flex-1 truncate text-center text-[10px] font-medium leading-tight">
-          {d.label}
-        </div>
-        {canDrill ? (
+      <div className="truncate px-1 text-center text-[10px] font-medium leading-tight">
+        {d.label}
+      </div>
+      <div className="relative" style={{ height: portAreaH }}>
+        {d.gate ? (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-75">
+            <GateSymbol gate={d.gate} width={52} height={26} />
+          </div>
+        ) : canDrill ? (
           <button
             type="button"
-            className="nodrag nopan shrink-0 rounded px-1 py-0.5 text-[10px] text-primary hover:bg-primary/10"
+            className="nodrag nopan absolute inset-0 z-[5] flex items-center justify-center text-[9px] text-muted-foreground hover:text-primary"
             title="Inspect internals"
             aria-label="Inspect internals"
             onClick={(e) => {
@@ -134,13 +138,6 @@ export function DeviceNode({ data }: NodeProps) {
           >
             ⇅
           </button>
-        ) : null}
-      </div>
-      <div className="relative" style={{ height: portAreaH }}>
-        {d.gate ? (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-75">
-            <GateSymbol gate={d.gate} width={52} height={26} />
-          </div>
         ) : null}
         {d.inputs.map((pin, i) => {
           const bit = d.inputBits?.[pin.id]
