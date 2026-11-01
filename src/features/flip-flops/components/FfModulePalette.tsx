@@ -9,6 +9,14 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import {
+  circuitGroupLabel,
+  sortCircuitGroups,
+} from '@/features/combo-circuits/lib/groups'
+import {
+  DEFAULT_CIRCUIT_GROUP,
+  type ComboCircuit,
+} from '@/features/combo-circuits/types'
 import { GateSymbol } from '@/features/logic-gates/components/GateSymbol'
 import {
   gateGroupLabel,
@@ -29,6 +37,7 @@ export const PALETTE_MIME = 'application/zeda-ff-palette'
 export type PalettePayload =
   | { kind: 'gate'; gateId: string; builtinKey?: string; name: string }
   | { kind: 'module'; moduleKey: string; name: string }
+  | { kind: 'combo'; circuitId: string; name: string }
 
 export type PaletteDragState = {
   payload: PalettePayload
@@ -61,6 +70,8 @@ type Props = {
   gates: LogicGate[]
   /** Library circuits for grouping (default / custom / presets). */
   circuits?: FlipFlopCircuit[]
+  /** Combo logic circuits from /clc. */
+  comboCircuits?: ComboCircuit[]
   excludeCircuitId?: string
   embedded?: boolean
   className?: string
@@ -168,6 +179,7 @@ function resolveCircuitModuleKey(c: FlipFlopCircuit): string | undefined {
 export function FfModulePalette({
   gates,
   circuits = [],
+  comboCircuits = [],
   excludeCircuitId,
   embedded,
   className,
@@ -175,10 +187,50 @@ export function FfModulePalette({
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState<OpenMap>(readOpenSections)
+  const [comboOpen, setComboOpen] = useState(true)
   const modules = useMemo(() => listFfModules(), [])
 
   const q = query.trim().toLowerCase()
   const searching = q.length > 0
+
+  const comboDisplayName = (c: ComboCircuit) => {
+    if (c.builtinKey) {
+      const key = `circuits.modules.${c.builtinKey}`
+      const localized = t(key)
+      if (localized !== key) return localized
+    }
+    return c.name
+  }
+
+  const comboGroups = useMemo(() => {
+    const filtered = comboCircuits.filter((c) => {
+      const name = comboDisplayName(c).toLowerCase()
+      const group = circuitGroupLabel(
+        c.group?.trim() || DEFAULT_CIRCUIT_GROUP,
+        t,
+      ).toLowerCase()
+      if (!q) return true
+      return (
+        name.includes(q) ||
+        group.includes(q) ||
+        (c.group?.toLowerCase().includes(q) ?? false) ||
+        (c.builtinKey?.toLowerCase().includes(q) ?? false)
+      )
+    })
+    const map = new Map<string, ComboCircuit[]>()
+    for (const c of filtered) {
+      const key = c.group?.trim() || DEFAULT_CIRCUIT_GROUP
+      const list = map.get(key) ?? []
+      list.push(c)
+      map.set(key, list)
+    }
+    return sortCircuitGroups(map.keys(), t).map((key) => ({
+      key,
+      label: circuitGroupLabel(key, t),
+      items: map.get(key)!,
+    }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- t + comboDisplayName
+  }, [comboCircuits, q, t])
 
   const filteredGates = useMemo(() => {
     if (!q) return gates
@@ -302,10 +354,16 @@ export function FfModulePalette({
   }
 
   const setAllSections = (nextOpen: boolean) => {
-    const next: OpenMap = { gates: nextOpen, modules: nextOpen }
+    const next: OpenMap = {
+      gates: nextOpen,
+      modules: nextOpen,
+      combo: nextOpen,
+    }
     for (const g of gateGroups) next[`gate:${g.key}`] = nextOpen
     for (const g of groups) next[`cat:${g.key}`] = nextOpen
+    for (const g of comboGroups) next[`combo:${g.key}`] = nextOpen
     setOpen(next)
+    setComboOpen(nextOpen)
     persistSections(next)
   }
 
@@ -344,8 +402,10 @@ export function FfModulePalette({
   const anyOpen =
     (open.gates ?? true) ||
     (open.modules ?? true) ||
+    comboOpen ||
     gateGroups.some((g) => open[`gate:${g.key}`] ?? true) ||
-    groups.some((g) => open[`cat:${g.key}`] ?? true)
+    groups.some((g) => open[`cat:${g.key}`] ?? true) ||
+    comboGroups.some((g) => open[`combo:${g.key}`] ?? true)
 
   return (
     <div
@@ -446,6 +506,68 @@ export function FfModulePalette({
                                 <span className="min-w-0 truncate font-medium">
                                   {g.name}
                                 </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          ) : null}
+        </section>
+
+        <section className="space-y-1.5 rounded-lg border bg-muted/15 p-2">
+          <PrimaryGroupHeader
+            open={searching || comboOpen}
+            title={t('flipflops.paletteCombo')}
+            onToggle={() => setComboOpen((v) => !v)}
+          />
+          {searching || comboOpen ? (
+            <div className="space-y-2 pl-0.5">
+              {comboGroups.every((g) => g.items.length === 0) ? (
+                <p className="px-1 text-xs text-muted-foreground">
+                  {t('common.empty')}
+                </p>
+              ) : (
+                comboGroups.map((group) => {
+                  if (!searching && group.items.length === 0) return null
+                  const catKey = `combo:${group.key}`
+                  const catOpen = searching || (open[catKey] ?? true)
+                  return (
+                    <div
+                      key={group.key}
+                      className="space-y-1 rounded-md bg-background/70 p-1"
+                    >
+                      <CategoryHeader
+                        open={catOpen}
+                        title={group.label}
+                        onToggle={() => toggle(catKey)}
+                      />
+                      {catOpen ? (
+                        <div className="ml-1 space-y-1 border-l-2 border-primary/25 pl-2">
+                          {group.items.map((c) => {
+                            const name = comboDisplayName(c)
+                            const payload: PalettePayload = {
+                              kind: 'combo',
+                              circuitId: c.id,
+                              name,
+                            }
+                            return (
+                              <button
+                                key={c.id}
+                                type="button"
+                                draggable
+                                onDragStart={(e) => onHtmlDragStart(e, payload)}
+                                onDragEnd={onDragEnd}
+                                onPointerDown={(e) =>
+                                  onPointerDownItem(e, payload)
+                                }
+                                className="w-full rounded-md border bg-background px-2 py-1.5 text-left text-xs font-medium hover:border-primary/40 hover:bg-muted/40"
+                              >
+                                {name}
                               </button>
                             )
                           })}

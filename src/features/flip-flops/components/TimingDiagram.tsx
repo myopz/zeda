@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { TimingWave } from '@/components/timing-wave'
 import { Button } from '@/components/ui/button'
+import type { ComboCircuit } from '@/features/combo-circuits/types'
 import type { LogicGate } from '@/features/logic-gates/types'
 import { cn } from '@/lib/utils'
 import type { Bit, FlipFlopCircuit } from '../types'
@@ -12,6 +13,10 @@ import {
   isFixedDrive,
   resolvePinDrive,
 } from '../lib/pin-drive'
+import {
+  applyPresentStateBits,
+  listPresentStateOutputs,
+} from '../lib/present-state'
 import {
   createInitialSimState,
   evaluateSequential,
@@ -24,7 +29,14 @@ const MAX_SLOTS = 32
 type Props = {
   circuit: FlipFlopCircuit
   gates: LogicGate[]
+  comboCircuits?: ComboCircuit[]
   className?: string
+}
+
+function defaultPresentBits(circuit: FlipFlopCircuit): Record<string, Bit> {
+  const next: Record<string, Bit> = {}
+  for (const p of listPresentStateOutputs(circuit)) next[p.id] = 0
+  return next
 }
 
 function resolveGateFactory(gates: LogicGate[]): GateResolver {
@@ -72,26 +84,52 @@ function buildDriveStimulus(
   return slots
 }
 
-export function TimingDiagram({ circuit, gates, className }: Props) {
+export function TimingDiagram({
+  circuit,
+  gates,
+  comboCircuits = [],
+  className,
+}: Props) {
   const { t } = useTranslation()
   const [cycles, setCycles] = useState(8)
   const [base, setBase] = useState(() => defaultSlot(circuit))
+  const [presentBits, setPresentBits] = useState(() =>
+    defaultPresentBits(circuit),
+  )
+
+  const presentPins = useMemo(
+    () => listPresentStateOutputs(circuit),
+    [circuit],
+  )
 
   useEffect(() => {
     setBase(defaultSlot(circuit))
-  }, [circuit.id, circuit.inputs])
+    setPresentBits(defaultPresentBits(circuit))
+  }, [circuit.id, circuit.inputs, circuit.outputs, circuit.nodes, circuit.wires])
 
   const resolveGate = useMemo(() => resolveGateFactory(gates), [gates])
 
   const result = useMemo(() => {
     try {
       const slots = buildDriveStimulus(circuit, base, cycles)
-      let sim = createInitialSimState(circuit)
+      const resolveCombo = (cid: string) =>
+        comboCircuits.find((c) => c.id === cid)
+      let sim = applyPresentStateBits(
+        circuit,
+        createInitialSimState(circuit),
+        presentBits,
+      )
       const samples: { inputs: Record<string, Bit>; outputs: Record<string, Bit> }[] =
         []
       const warnings: string[] = []
       for (const slot of slots) {
-        const r = evaluateSequential(circuit, slot, sim, resolveGate)
+        const r = evaluateSequential(
+          circuit,
+          slot,
+          sim,
+          resolveGate,
+          resolveCombo,
+        )
         samples.push({ inputs: slot, outputs: r.outputs })
         warnings.push(...r.warnings)
         sim = { ffState: r.ffState, prevClk: r.prevClk }
@@ -106,7 +144,7 @@ export function TimingDiagram({ circuit, gates, className }: Props) {
             : String(err),
       }
     }
-  }, [circuit, base, cycles, resolveGate])
+  }, [circuit, base, presentBits, cycles, resolveGate, comboCircuits])
 
   const tracks = useMemo(() => {
     if (!result.ok) return []
@@ -135,6 +173,13 @@ export function TimingDiagram({ circuit, gates, className }: Props) {
         [pinId]: prev[pinId] === 1 ? 0 : 1,
       }),
     )
+  }
+
+  const togglePresent = (pinId: string) => {
+    setPresentBits((prev) => ({
+      ...prev,
+      [pinId]: prev[pinId] === 1 ? 0 : 1,
+    }))
   }
 
   const stimPins = circuit.inputs.filter((p) => {
@@ -184,6 +229,26 @@ export function TimingDiagram({ circuit, gates, className }: Props) {
               onClick={() => toggleBase(p.id)}
             >
               {p.name}={base[p.id] ?? 0}
+            </Button>
+          ))}
+        </div>
+      ) : null}
+
+      {presentPins.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          <span className="text-xs text-muted-foreground">
+            {t('flipflops.timingInitialState')}
+          </span>
+          {presentPins.map((p) => (
+            <Button
+              key={p.id}
+              type="button"
+              size="sm"
+              variant="outline"
+              className="font-mono"
+              onClick={() => togglePresent(p.id)}
+            >
+              {p.name}={presentBits[p.id] ?? 0}
             </Button>
           ))}
         </div>

@@ -6,6 +6,8 @@ import { FlipFlopDetailPage } from '@/features/flip-flops/pages/FlipFlopDetailPa
 import { FlipFlopListPage } from '@/features/flip-flops/pages/FlipFlopListPage'
 import { LogicGateDetailPage } from '@/features/logic-gates/pages/LogicGateDetailPage'
 import { LogicGateListPage } from '@/features/logic-gates/pages/LogicGateListPage'
+import { SequentialDetailPage } from '@/features/sequential-circuits/pages/SequentialDetailPage'
+import { SequentialListPage } from '@/features/sequential-circuits/pages/SequentialListPage'
 
 export function AppRouter() {
   return (
@@ -19,6 +21,8 @@ export function AppRouter() {
           <Route path="clc/:id" element={<ComboCircuitDetailPage />} />
           <Route path="ff" element={<FlipFlopListPage />} />
           <Route path="ff/:id" element={<FlipFlopDetailPage />} />
+          <Route path="seq" element={<SequentialListPage />} />
+          <Route path="seq/:id" element={<SequentialDetailPage />} />
           <Route path="*" element={<Navigate to="/lgc" replace />} />
         </Route>
       </Routes>

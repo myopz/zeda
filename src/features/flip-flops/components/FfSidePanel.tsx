@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import type { ComboCircuit } from '@/features/combo-circuits/types'
 import type { LogicGate } from '@/features/logic-gates/types'
 import { cn } from '@/lib/utils'
 import type { FlipFlopCircuit, PinDrive } from '../types'
@@ -18,6 +19,8 @@ type Props = {
   gates: LogicGate[]
   /** All flip-flop circuits for palette grouping (default / custom / presets). */
   circuits?: FlipFlopCircuit[]
+  /** Combo logic circuits from /clc. */
+  comboCircuits?: ComboCircuit[]
   groupOptions?: string[]
   readOnly?: boolean
   collapsed?: boolean
@@ -44,6 +47,7 @@ export function FfSidePanel({
   circuit,
   gates,
   circuits = [],
+  comboCircuits = [],
   groupOptions = [],
   readOnly,
   collapsed = false,
@@ -133,6 +137,7 @@ export function FfSidePanel({
         <FfModulePalette
           gates={gates}
           circuits={circuits}
+          comboCircuits={comboCircuits}
           excludeCircuitId={circuit.id}
           embedded
           className="h-full"

@@ -14,6 +14,9 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { listCircuits as listComboCircuits } from '@/features/combo-circuits/db/repository'
+import { buildModuleInternals } from '@/features/combo-circuits/lib/internals'
+import type { ComboCircuit } from '@/features/combo-circuits/types'
 import { listGates } from '@/features/logic-gates/db/repository'
 import type { LogicGate } from '@/features/logic-gates/types'
 import { useHistoryState } from '@/features/logic-gates/lib/history'
@@ -54,6 +57,39 @@ type DrillFrame = {
   key: string
   label: string
   circuit: FlipFlopCircuit
+}
+
+function comboViewAsFf(view: ComboCircuit): FlipFlopCircuit {
+  return {
+    id: view.id,
+    name: view.name,
+    description: view.description,
+    kind: 'custom',
+    builtinKey: view.builtinKey,
+    group: view.group,
+    inputs: view.inputs,
+    outputs: view.outputs,
+    nodes: view.nodes.map((n) => {
+      if (n.kind === 'gate') return { ...n }
+      if (n.kind === 'module') {
+        return {
+          id: n.id,
+          kind: 'comboModule' as const,
+          moduleKey: n.moduleKey,
+          position: n.position,
+        }
+      }
+      return {
+        id: n.id,
+        kind: 'combo' as const,
+        circuitId: n.circuitId,
+        position: n.position,
+      }
+    }),
+    wires: view.wires,
+    createdAt: view.createdAt,
+    updatedAt: view.updatedAt,
+  }
 }
 
 const SIDE_COLLAPSE_KEY = 'zeda.flipflops.sideCollapsed'
@@ -119,6 +155,7 @@ export function FlipFlopDetailPage() {
   const [savedFlash, setSavedFlash] = useState(false)
   const [gates, setGates] = useState<LogicGate[]>([])
   const [allCircuits, setAllCircuits] = useState<FlipFlopCircuit[]>([])
+  const [comboCircuits, setComboCircuits] = useState<ComboCircuit[]>([])
   const history = useHistoryState<Draft | null>(null)
 
   const [drillStack, setDrillStack] = useState<DrillFrame[]>([])
@@ -140,14 +177,16 @@ export function FlipFlopDetailPage() {
     ;(async () => {
       if (!id) return
       setLoading(true)
-      const [circuit, gateList, circuitList] = await Promise.all([
+      const [circuit, gateList, circuitList, comboList] = await Promise.all([
         getFlipFlop(id),
         listGates(),
         listFlipFlops(),
+        listComboCircuits(),
       ])
       if (cancelled) return
       setGates(gateList)
       setAllCircuits(circuitList)
+      setComboCircuits(comboList)
       if (!circuit) {
         setNotFound(true)
         setLoading(false)
@@ -222,7 +261,15 @@ export function FlipFlopDetailPage() {
       }
       try {
         const forced = applyFixedInputDrives(viewing.inputs, inputs)
-        const result = evaluateSequential(viewing, forced, state, resolveGate)
+        const resolveCombo = (cid: string) =>
+          comboCircuits.find((c) => c.id === cid)
+        const result = evaluateSequential(
+          viewing,
+          forced,
+          state,
+          resolveGate,
+          resolveCombo,
+        )
         setEvalSnapshot({
           ok: true,
           skip: false,
@@ -244,7 +291,7 @@ export function FlipFlopDetailPage() {
         return state
       }
     },
-    [viewing, inDrill, resolveGate, t],
+    [viewing, inDrill, resolveGate, comboCircuits, t],
   )
 
   useEffect(() => {
@@ -299,6 +346,62 @@ export function FlipFlopDetailPage() {
             ...internals,
             // Unique id per drill frame so canvas fitView re-runs on sibling drills.
             id: `${internals.id}#${prev.length}`,
+          },
+        },
+      ])
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [gates, t],
+  )
+
+  const comboDisplayName = (c: ComboCircuit) => {
+    if (c.builtinKey) {
+      const key = `circuits.modules.${c.builtinKey}`
+      const localized = t(key)
+      if (localized !== key) return localized
+    }
+    return c.name
+  }
+
+  const onDrillCombo = useCallback(
+    (circuitId: string) => {
+      const child = comboCircuits.find((c) => c.id === circuitId)
+      if (!child) return
+      const asFf = comboViewAsFf(child)
+      setDrillStack((prev) => [
+        ...prev,
+        {
+          key: `combo:${circuitId}:${prev.length}`,
+          label: comboDisplayName(child),
+          circuit: {
+            ...asFf,
+            id: `${asFf.id}#${prev.length}`,
+          },
+        },
+      ])
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [comboCircuits, t],
+  )
+
+  const onDrillComboModule = useCallback(
+    (moduleKey: string) => {
+      const internals = buildModuleInternals(moduleKey, gates)
+      if (!internals) {
+        console.warn(`[ff] no combo internals for module "${moduleKey}"`)
+        return
+      }
+      const asFf = comboViewAsFf(internals)
+      const labelKey = `circuits.modules.${moduleKey}`
+      const label = t(labelKey)
+      setDrillStack((prev) => [
+        ...prev,
+        {
+          key: `comboModule:${moduleKey}:${prev.length}`,
+          label: label === labelKey ? moduleKey : label,
+          circuit: {
+            ...asFf,
+            id: `${asFf.id}#${prev.length}`,
           },
         },
       ])
@@ -604,6 +707,7 @@ export function FlipFlopDetailPage() {
               circuit={rootCircuit}
               gates={gates}
               circuits={allCircuits}
+              comboCircuits={comboCircuits}
               groupOptions={groupOptions}
               readOnly={readOnly}
               collapsed={sideCollapsed}
@@ -622,11 +726,14 @@ export function FlipFlopDetailPage() {
             <FfCircuitCanvas
               circuit={viewing}
               gates={gates}
+              comboCircuits={comboCircuits}
               readOnly={readOnly}
               onChange={commit}
               endpointBits={evalSnapshot.ok ? evalSnapshot.endpointBits : undefined}
               nodeOutBits={evalSnapshot.ok ? evalSnapshot.nodeOutBits : undefined}
               onDrillModule={onDrillModule}
+              onDrillCombo={onDrillCombo}
+              onDrillComboModule={onDrillComboModule}
               onToggleInput={inDrill ? undefined : onToggleInput}
             />
           </div>
@@ -689,7 +796,11 @@ export function FlipFlopDetailPage() {
                   <StateDiagramView moduleKey={moduleKey} />
                 </TabsContent>
                 <TabsContent value="timing" className="mt-0">
-                  <TimingDiagram circuit={rootCircuit} gates={gates} />
+                  <TimingDiagram
+                    circuit={rootCircuit}
+                    gates={gates}
+                    comboCircuits={comboCircuits}
+                  />
                 </TabsContent>
               </div>
             ) : null}

@@ -1,4 +1,11 @@
-import { Boxes, CircuitBoard, PanelLeftClose, PanelLeftOpen, Timer } from 'lucide-react'
+import {
+  Boxes,
+  CircuitBoard,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Timer,
+  Workflow,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { NavLink } from 'react-router'
 import { Button } from '@/components/ui/button'
@@ -71,6 +78,14 @@ export function AppSidebar({ collapsed, onToggle }: Props) {
         >
           <Timer className="size-4 shrink-0" />
           {!collapsed && <span>{t('nav.flipFlops')}</span>}
+        </NavLink>
+        <NavLink
+          to="/seq"
+          className={({ isActive }) => navClass(isActive, collapsed)}
+          title={t('nav.sequential')}
+        >
+          <Workflow className="size-4 shrink-0" />
+          {!collapsed && <span>{t('nav.sequential')}</span>}
         </NavLink>
       </nav>
     </aside>

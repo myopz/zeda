@@ -32,7 +32,23 @@ export type FfModuleNode = {
   position: { x: number; y: number }
 }
 
-export type FfNode = FfGateNode | FfModuleNode
+/** Reference to a ComboCircuit (combinational black box by IO). */
+export type FfComboNode = {
+  id: string
+  kind: 'combo'
+  circuitId: string
+  position: { x: number; y: number }
+}
+
+/** Combo catalog module (half_adder, …) for palette / drill views. */
+export type FfComboModuleNode = {
+  id: string
+  kind: 'comboModule'
+  moduleKey: string
+  position: { x: number; y: number }
+}
+
+export type FfNode = FfGateNode | FfModuleNode | FfComboNode | FfComboModuleNode
 
 export const DEFAULT_FF_GROUP = 'default'
 

@@ -16,6 +16,9 @@ import {
 import '@xyflow/react/dist/style.css'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { hasModuleInternals } from '@/features/combo-circuits/lib/internals'
+import { getModule } from '@/features/combo-circuits/lib/modules'
+import type { ComboCircuit } from '@/features/combo-circuits/types'
 import type { LogicGate } from '@/features/logic-gates/types'
 import { createId, cn } from '@/lib/utils'
 import { hasFfInternals } from '../lib/internals'
@@ -164,12 +167,15 @@ function paintSelection(
 type Props = {
   circuit: FlipFlopCircuit
   gates: LogicGate[]
+  comboCircuits?: ComboCircuit[]
   readOnly?: boolean
   onChange: (next: FlipFlopCircuit) => void
   /** Simulation endpoint bits (`nodeId::pinId` -> bit) for wire/pin highlight */
   endpointBits?: Record<string, Bit>
   nodeOutBits?: Record<string, Record<string, Bit>>
   onDrillModule?: (moduleKey: string) => void
+  onDrillCombo?: (circuitId: string) => void
+  onDrillComboModule?: (moduleKey: string) => void
   /** Toggle a circuit input pin level (simulation) */
   onToggleInput?: (pinId: string) => void
   className?: string
@@ -221,6 +227,9 @@ function buildFlowGraph(
   moduleLabel?: (key: string) => string,
   onToggleInput?: (pinId: string) => void,
   onDrillModule?: (moduleKey: string) => void,
+  comboCircuits?: ComboCircuit[],
+  onDrillCombo?: (circuitId: string) => void,
+  onDrillComboModule?: (moduleKey: string) => void,
 ): { nodes: Node[]; edges: Edge[] } {
   const gateById = new Map(gates.map((g) => [g.id, g]))
   const gateByKey = new Map<string, LogicGate>()
@@ -300,6 +309,28 @@ function buildFlowGraph(
       } else {
         label = `Missing gate`
       }
+    } else if (node.kind === 'combo') {
+      circuitId = node.circuitId
+      const nested = comboCircuits?.find((c) => c.id === node.circuitId)
+      if (nested) {
+        inputs = nested.inputs
+        outputs = nested.outputs
+        label = nested.name
+        drillable = true
+      } else {
+        label = `Missing combo`
+      }
+    } else if (node.kind === 'comboModule') {
+      moduleKey = node.moduleKey
+      const mod = getModule(node.moduleKey)
+      if (mod) {
+        inputs = mod.inputs
+        outputs = mod.outputs
+        label = moduleLabel?.(node.moduleKey) ?? node.moduleKey
+        drillable = hasModuleInternals(node.moduleKey)
+      } else {
+        label = `Missing ${node.moduleKey}`
+      }
     } else {
       moduleKey = node.moduleKey
       const mod = getFfModule(node.moduleKey)
@@ -319,7 +350,16 @@ function buildFlowGraph(
       if (b !== undefined) inputBits[pin.id] = b
     }
     const outputBits = nodeOutBits?.[node.id] ?? {}
-    const drillKey = moduleKey
+
+    const onDrill = !drillable
+      ? undefined
+      : node.kind === 'combo' && circuitId && onDrillCombo
+        ? () => onDrillCombo(circuitId)
+        : node.kind === 'comboModule' && moduleKey && onDrillComboModule
+          ? () => onDrillComboModule(moduleKey)
+          : moduleKey && onDrillModule
+            ? () => onDrillModule(moduleKey)
+            : undefined
 
     nodes.push({
       id: node.id,
@@ -332,10 +372,7 @@ function buildFlowGraph(
         moduleKey,
         circuitId,
         drillable,
-        onDrill:
-          drillable && drillKey && onDrillModule
-            ? () => onDrillModule(drillKey)
-            : undefined,
+        onDrill,
         inputBits,
         outputBits,
         gate: gate
@@ -385,11 +422,14 @@ function buildFlowGraph(
 function CanvasInner({
   circuit,
   gates,
+  comboCircuits,
   readOnly,
   onChange,
   endpointBits,
   nodeOutBits,
   onDrillModule,
+  onDrillCombo,
+  onDrillComboModule,
   onToggleInput,
   className,
 }: Props) {
@@ -404,9 +444,12 @@ function CanvasInner({
 
   const moduleLabel = useCallback(
     (key: string) => {
-      const i18nKey = `flipflops.modules.${key}`
-      const label = t(i18nKey)
-      return label === i18nKey ? key : label
+      const ffKey = `flipflops.modules.${key}`
+      const ffLabel = t(ffKey)
+      if (ffLabel !== ffKey) return ffLabel
+      const comboKey = `circuits.modules.${key}`
+      const comboLabel = t(comboKey)
+      return comboLabel === comboKey ? key : comboLabel
     },
     [t],
   )
@@ -421,15 +464,21 @@ function CanvasInner({
         moduleLabel,
         onToggleInput,
         onDrillModule,
+        comboCircuits,
+        onDrillCombo,
+        onDrillComboModule,
       ),
     [
       circuit,
       gates,
+      comboCircuits,
       endpointBits,
       nodeOutBits,
       moduleLabel,
       onToggleInput,
       onDrillModule,
+      onDrillCombo,
+      onDrillComboModule,
     ],
   )
 
@@ -585,11 +634,10 @@ function CanvasInner({
   const onNodeDoubleClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
       const data = node.data as DeviceNodeData
-      if (data.drillable && data.moduleKey && onDrillModule) {
-        onDrillModule(data.moduleKey)
-      }
+      if (!data.drillable) return
+      data.onDrill?.()
     },
-    [onDrillModule],
+    [],
   )
 
   const onNodesChange = useCallback(
@@ -648,6 +696,13 @@ function CanvasInner({
             gateId: payload.gateId,
             builtinKey: payload.builtinKey,
           },
+          position,
+        }
+      } else if (payload.kind === 'combo') {
+        node = {
+          id,
+          kind: 'combo',
+          circuitId: payload.circuitId,
           position,
         }
       } else {
