@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, useNavigate } from 'react-router'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -52,18 +52,42 @@ function readStoredPageSize(): number {
 export function ComboCircuitListPage() {
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
+  const location = useLocation()
+  const [searchParams, setSearchParams] = useSearchParams()
   const fileRef = useRef<HTMLInputElement>(null)
 
   const [circuits, setCircuits] = useState<ComboCircuit[]>([])
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState<'list' | 'card'>('list')
   const [pageSize, setPageSize] = useState(readStoredPageSize)
-  const [page, setPage] = useState(1)
+  const pageParam = Number(searchParams.get('page'))
+  const page =
+    Number.isFinite(pageParam) && pageParam >= 1 ? Math.trunc(pageParam) : 1
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [query, setQuery] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<ComboCircuit | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  const setPage = (next: number | ((prev: number) => number)) => {
+    const value = typeof next === 'function' ? next(page) : next
+    const clamped = Math.max(1, Math.trunc(value))
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev)
+        if (clamped <= 1) params.delete('page')
+        else params.set('page', String(clamped))
+        return params
+      },
+      { replace: true },
+    )
+  }
+
+  const listReturnPath = `${location.pathname}${location.search}`
+
+  const openDetail = (id: string) => {
+    navigate(`/clc/${id}`, { state: { fromList: listReturnPath } })
+  }
 
   const reload = useCallback(async () => {
     setLoading(true)
@@ -94,12 +118,15 @@ export function ComboCircuitListPage() {
   }, [circuits, query])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
-  const safePage = Math.min(page, totalPages)
+  // While loading, keep the URL page so returning from detail (?page=N) is not
+  // clamped to 1 against an empty list (totalPages === 1).
+  const safePage = loading ? page : Math.min(page, totalPages)
   const pageItems = filtered.slice((safePage - 1) * pageSize, safePage * pageSize)
 
   useEffect(() => {
+    if (loading) return
     if (page !== safePage) setPage(safePage)
-  }, [page, safePage])
+  }, [loading, page, safePage])
 
   const toggleSelect = (id: string, checked: boolean) => {
     setSelected((prev) => {
@@ -128,7 +155,7 @@ export function ComboCircuitListPage() {
 
   const onCreate = async () => {
     const circuit = await createCircuit(t('circuits.newCircuitName'))
-    navigate(`/clc/${circuit.id}`)
+    navigate(`/clc/${circuit.id}`, { state: { fromList: listReturnPath } })
   }
 
   const onCopy = async (id: string) => {
@@ -311,7 +338,7 @@ export function ComboCircuitListPage() {
                   <tr
                     key={circuit.id}
                     className="cursor-pointer border-t hover:bg-muted/40"
-                    onClick={() => navigate(`/clc/${circuit.id}`)}
+                    onClick={() => openDetail(circuit.id)}
                   >
                     <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                       <Checkbox
@@ -368,6 +395,7 @@ export function ComboCircuitListPage() {
               <Link
                 key={circuit.id}
                 to={`/clc/${circuit.id}`}
+                state={{ fromList: listReturnPath }}
                 className={cn(
                   'rounded-lg border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-muted/30',
                   selected.has(circuit.id) && 'border-primary/50 bg-muted/20',

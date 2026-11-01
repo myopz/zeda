@@ -6,45 +6,74 @@ import { Input } from '@/components/ui/input'
 import { GateSymbol } from '@/features/logic-gates/components/GateSymbol'
 import type { LogicGate } from '@/features/logic-gates/types'
 import { cn } from '@/lib/utils'
-import { listModules, type ModuleCategory } from '../lib/modules'
+import {
+  circuitGroupLabel,
+  sortCircuitGroups,
+} from '../lib/groups'
+import { DEFAULT_CIRCUIT_GROUP, type ComboCircuit } from '../types'
 
 export const PALETTE_MIME = 'application/zeda-palette'
 
 export type PalettePayload =
   | { kind: 'gate'; gateId: string; builtinKey?: string; name: string }
   | { kind: 'module'; moduleKey: string; name: string }
+  | { kind: 'circuit'; circuitId: string; name: string }
+
+/** Cross-component drag state for touch / pointer (HTML5 DnD fails on many mobile browsers). */
+export type PaletteDragState = {
+  payload: PalettePayload
+  startX: number
+  startY: number
+  moved: boolean
+}
+
+let activePaletteDrag: PaletteDragState | null = null
+
+const DRAG_THRESHOLD_PX = 10
+
+export function peekPaletteDrag(): PaletteDragState | null {
+  return activePaletteDrag
+}
+
+export function clearPaletteDrag() {
+  activePaletteDrag = null
+}
+
+export function notePaletteDragMove(clientX: number, clientY: number) {
+  if (!activePaletteDrag) return
+  const dx = clientX - activePaletteDrag.startX
+  const dy = clientY - activePaletteDrag.startY
+  if (dx * dx + dy * dy >= DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) {
+    activePaletteDrag = { ...activePaletteDrag, moved: true }
+  }
+}
 
 type Props = {
   gates: LogicGate[]
+  /** Catalog + custom circuits for the modules section */
+  circuits?: ComboCircuit[]
+  /** Exclude the circuit currently being edited */
+  excludeCircuitId?: string
   /** Content-only mode for tab host */
   embedded?: boolean
   className?: string
 }
 
-type SectionId = 'gates' | ModuleCategory
-
-const CATEGORY_ORDER: ModuleCategory[] = ['adder', 'encoder', 'decoder', 'ttl']
-const ALL_SECTION_IDS: SectionId[] = ['gates', ...CATEGORY_ORDER]
 const SECTION_KEY = 'zeda.circuits.paletteSections'
 
-function readOpenSections(): Record<SectionId, boolean> {
-  const defaults: Record<SectionId, boolean> = {
-    gates: true,
-    adder: true,
-    encoder: true,
-    decoder: true,
-    ttl: true,
-  }
+type OpenMap = Record<string, boolean>
+
+function readOpenSections(): OpenMap {
   try {
     const raw = localStorage.getItem(SECTION_KEY)
-    if (!raw) return defaults
-    return { ...defaults, ...(JSON.parse(raw) as Record<SectionId, boolean>) }
+    if (!raw) return { gates: true }
+    return { gates: true, ...(JSON.parse(raw) as OpenMap) }
   } catch {
-    return defaults
+    return { gates: true }
   }
 }
 
-function persistSections(next: Record<SectionId, boolean>) {
+function persistSections(next: OpenMap) {
   localStorage.setItem(SECTION_KEY, JSON.stringify(next))
 }
 
@@ -106,12 +135,17 @@ function CategoryHeader({
   )
 }
 
-export function ModulePalette({ gates, embedded, className }: Props) {
+export function ModulePalette({
+  gates,
+  circuits = [],
+  excludeCircuitId,
+  embedded,
+  className,
+}: Props) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [openSections, setOpenSections] = useState(readOpenSections)
   const [modulesOpen, setModulesOpen] = useState(true)
-  const modules = listModules()
   const q = query.trim().toLowerCase()
   const searching = q.length > 0
 
@@ -125,44 +159,105 @@ export function ModulePalette({ gates, embedded, className }: Props) {
     )
   }, [gates, q])
 
-  const filteredModules = useMemo(() => {
-    if (!q) return modules
-    return modules.filter((m) => {
-      const label = t(`circuits.modules.${m.key}`).toLowerCase()
-      const cat = t(`circuits.category.${m.category}`).toLowerCase()
+  const moduleCircuits = useMemo(() => {
+    return circuits.filter((c) => c.id !== excludeCircuitId)
+  }, [circuits, excludeCircuitId])
+
+  const filteredCircuits = useMemo(() => {
+    if (!q) return moduleCircuits
+    return moduleCircuits.filter((c) => {
+      const name = c.name.toLowerCase()
+      const group = circuitGroupLabel(c.group, t).toLowerCase()
+      const builtin =
+        c.builtinKey != null
+          ? t(`circuits.modules.${c.builtinKey}`).toLowerCase()
+          : ''
       return (
-        m.key.toLowerCase().includes(q) ||
-        label.includes(q) ||
-        cat.includes(q)
+        name.includes(q) ||
+        group.includes(q) ||
+        builtin.includes(q) ||
+        (c.description?.toLowerCase().includes(q) ?? false)
       )
     })
-  }, [modules, q, t])
+  }, [moduleCircuits, q, t])
 
-  const toggleSection = (id: SectionId) => {
+  const groups = useMemo(() => {
+    const map = new Map<string, ComboCircuit[]>()
+    for (const c of filteredCircuits) {
+      const g = c.group || DEFAULT_CIRCUIT_GROUP
+      const list = map.get(g) ?? []
+      list.push(c)
+      map.set(g, list)
+    }
+    const keys = sortCircuitGroups(map.keys(), t)
+    return keys.map((key) => ({
+      key,
+      label: circuitGroupLabel(key, t),
+      items: map.get(key)!,
+    }))
+  }, [filteredCircuits, t])
+
+  const toggleSection = (id: string) => {
     setOpenSections((prev) => {
-      const next = { ...prev, [id]: !prev[id] }
+      const next = { ...prev, [id]: !(prev[id] ?? true) }
       persistSections(next)
       return next
     })
   }
 
   const setAllSections = (open: boolean) => {
-    const next = Object.fromEntries(
-      ALL_SECTION_IDS.map((id) => [id, open]),
-    ) as Record<SectionId, boolean>
+    const next: OpenMap = { gates: open }
+    for (const g of groups) next[g.key] = open
     setOpenSections(next)
     persistSections(next)
   }
 
   const onDragStart = (e: React.DragEvent, payload: PalettePayload) => {
+    activePaletteDrag = {
+      payload,
+      startX: e.clientX,
+      startY: e.clientY,
+      moved: true,
+    }
     e.dataTransfer.setData(PALETTE_MIME, JSON.stringify(payload))
     e.dataTransfer.effectAllowed = 'copy'
   }
 
-  const gatesOpen = searching || openSections.gates
+  const onDragEnd = () => {
+    window.setTimeout(() => {
+      clearPaletteDrag()
+    }, 0)
+  }
+
+  const onPointerDownItem = (
+    e: React.PointerEvent,
+    payload: PalettePayload,
+  ) => {
+    // Mouse HTML5 DnD handles desktop; pointer path is for touch.
+    if (e.pointerType === 'mouse') return
+    activePaletteDrag = {
+      payload,
+      startX: e.clientX,
+      startY: e.clientY,
+      moved: false,
+    }
+  }
+
+  const circuitDisplayName = (c: ComboCircuit) => {
+    if (c.builtinKey) {
+      const key = `circuits.modules.${c.builtinKey}`
+      const localized = t(key)
+      if (localized !== key) return localized
+    }
+    return c.name
+  }
+
+  const gatesOpen = searching || (openSections.gates ?? true)
   const showModulesBody = searching || modulesOpen
   const anyOpen =
-    modulesOpen || ALL_SECTION_IDS.some((id) => openSections[id])
+    modulesOpen ||
+    (openSections.gates ?? true) ||
+    groups.some((g) => openSections[g.key] ?? true)
 
   return (
     <div
@@ -223,36 +318,39 @@ export function ModulePalette({ gates, embedded, className }: Props) {
               {filteredGates.length === 0 ? (
                 <p className="px-1 text-xs text-muted-foreground">{t('common.empty')}</p>
               ) : (
-                filteredGates.map((g) => (
-                  <button
-                    key={g.id}
-                    type="button"
-                    draggable
-                    onDragStart={(e) =>
-                      onDragStart(e, {
-                        kind: 'gate',
-                        gateId: g.id,
-                        builtinKey: g.builtinKey,
-                        name: g.name,
-                      })
-                    }
-                    className="flex w-full items-center gap-2 rounded-md border bg-background px-2 py-1.5 text-left text-sm hover:border-primary/40 hover:bg-muted/40"
-                  >
-                    <GateSymbol
-                      gate={g}
-                      width={40}
-                      height={24}
-                      className="shrink-0 text-muted-foreground"
-                    />
-                    <span className="min-w-0 truncate font-medium">{g.name}</span>
-                  </button>
-                ))
+                filteredGates.map((g) => {
+                  const payload: PalettePayload = {
+                    kind: 'gate',
+                    gateId: g.id,
+                    builtinKey: g.builtinKey,
+                    name: g.name,
+                  }
+                  return (
+                    <button
+                      key={g.id}
+                      type="button"
+                      draggable
+                      onDragStart={(e) => onDragStart(e, payload)}
+                      onDragEnd={onDragEnd}
+                      onPointerDown={(e) => onPointerDownItem(e, payload)}
+                      className="flex w-full items-center gap-2 rounded-md border bg-background px-2 py-1.5 text-left text-sm hover:border-primary/40 hover:bg-muted/40"
+                    >
+                      <GateSymbol
+                        gate={g}
+                        width={40}
+                        height={24}
+                        className="shrink-0 text-muted-foreground"
+                      />
+                      <span className="min-w-0 truncate font-medium">{g.name}</span>
+                    </button>
+                  )
+                })
               )}
             </div>
           ) : null}
         </section>
 
-        {/* 一级：功能模块 → 二级分类 */}
+        {/* 一级：功能模块 → 按 group 分组（含自定义电路，排除自己） */}
         <section className="space-y-1.5 rounded-lg border bg-muted/15 p-2">
           <PrimaryGroupHeader
             open={showModulesBody}
@@ -261,41 +359,50 @@ export function ModulePalette({ gates, embedded, className }: Props) {
           />
           {showModulesBody ? (
             <div className="space-y-2 pl-0.5">
-              {CATEGORY_ORDER.map((cat) => {
-                const items = filteredModules.filter((m) => m.category === cat)
-                if (items.length === 0) return null
-                const open = searching || openSections[cat]
-                return (
-                  <div key={cat} className="space-y-1 rounded-md bg-background/70 p-1">
-                    <CategoryHeader
-                      open={open}
-                      title={t(`circuits.category.${cat}`)}
-                      onToggle={() => toggleSection(cat)}
-                    />
-                    {open ? (
-                      <div className="ml-1 space-y-1 border-l-2 border-primary/25 pl-2">
-                        {items.map((m) => (
-                          <button
-                            key={m.key}
-                            type="button"
-                            draggable
-                            onDragStart={(e) =>
-                              onDragStart(e, {
-                                kind: 'module',
-                                moduleKey: m.key,
-                                name: t(`circuits.modules.${m.key}`),
-                              })
+              {groups.length === 0 ? (
+                <p className="px-1 text-xs text-muted-foreground">{t('common.empty')}</p>
+              ) : (
+                groups.map((group) => {
+                  const open = searching || (openSections[group.key] ?? true)
+                  return (
+                    <div
+                      key={group.key}
+                      className="space-y-1 rounded-md bg-background/70 p-1"
+                    >
+                      <CategoryHeader
+                        open={open}
+                        title={group.label}
+                        onToggle={() => toggleSection(group.key)}
+                      />
+                      {open ? (
+                        <div className="ml-1 space-y-1 border-l-2 border-primary/25 pl-2">
+                          {group.items.map((c) => {
+                            const name = circuitDisplayName(c)
+                            const payload: PalettePayload = {
+                              kind: 'circuit',
+                              circuitId: c.id,
+                              name,
                             }
-                            className="w-full rounded-md border bg-background px-2 py-1.5 text-left text-sm hover:border-primary/40 hover:bg-muted/40"
-                          >
-                            {t(`circuits.modules.${m.key}`)}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                )
-              })}
+                            return (
+                              <button
+                                key={c.id}
+                                type="button"
+                                draggable
+                                onDragStart={(e) => onDragStart(e, payload)}
+                                onDragEnd={onDragEnd}
+                                onPointerDown={(e) => onPointerDownItem(e, payload)}
+                                className="w-full rounded-md border bg-background px-2 py-1.5 text-left text-sm hover:border-primary/40 hover:bg-muted/40"
+                              >
+                                {name}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
+                  )
+                })
+              )}
             </div>
           ) : null}
         </section>

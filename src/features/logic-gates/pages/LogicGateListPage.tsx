@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, useNavigate } from 'react-router'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -52,18 +52,42 @@ function readStoredPageSize(): number {
 export function LogicGateListPage() {
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
+  const location = useLocation()
+  const [searchParams, setSearchParams] = useSearchParams()
   const fileRef = useRef<HTMLInputElement>(null)
 
   const [gates, setGates] = useState<LogicGate[]>([])
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState<'list' | 'card'>('list')
   const [pageSize, setPageSize] = useState(readStoredPageSize)
-  const [page, setPage] = useState(1)
+  const pageParam = Number(searchParams.get('page'))
+  const page =
+    Number.isFinite(pageParam) && pageParam >= 1 ? Math.trunc(pageParam) : 1
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [query, setQuery] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<LogicGate | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  const setPage = (next: number | ((prev: number) => number)) => {
+    const value = typeof next === 'function' ? next(page) : next
+    const clamped = Math.max(1, Math.trunc(value))
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev)
+        if (clamped <= 1) params.delete('page')
+        else params.set('page', String(clamped))
+        return params
+      },
+      { replace: true },
+    )
+  }
+
+  const listReturnPath = `${location.pathname}${location.search}`
+
+  const openDetail = (id: string) => {
+    navigate(`/lgc/${id}`, { state: { fromList: listReturnPath } })
+  }
 
   const reload = useCallback(async () => {
     setLoading(true)
@@ -94,12 +118,15 @@ export function LogicGateListPage() {
   }, [gates, query])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
-  const safePage = Math.min(page, totalPages)
+  // Keep URL page while loading so returning from detail (?page=N) is not
+  // clamped to 1 against an empty list.
+  const safePage = loading ? page : Math.min(page, totalPages)
   const pageItems = filtered.slice((safePage - 1) * pageSize, safePage * pageSize)
 
   useEffect(() => {
+    if (loading) return
     if (page !== safePage) setPage(safePage)
-  }, [page, safePage])
+  }, [loading, page, safePage])
 
   const toggleSelect = (id: string, checked: boolean) => {
     setSelected((prev) => {
@@ -128,7 +155,7 @@ export function LogicGateListPage() {
 
   const onCreate = async () => {
     const gate = await createGate(t('gates.newGateName'))
-    navigate(`/lgc/${gate.id}`)
+    navigate(`/lgc/${gate.id}`, { state: { fromList: listReturnPath } })
   }
 
   const onCopy = async (id: string) => {
@@ -296,7 +323,7 @@ export function LogicGateListPage() {
                   <tr
                     key={gate.id}
                     className="cursor-pointer border-t hover:bg-muted/40"
-                    onClick={() => navigate(`/lgc/${gate.id}`)}
+                    onClick={() => openDetail(gate.id)}
                   >
                     <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                       <Checkbox
@@ -353,6 +380,7 @@ export function LogicGateListPage() {
               <Link
                 key={gate.id}
                 to={`/lgc/${gate.id}`}
+                state={{ fromList: listReturnPath }}
                 className={cn(
                   'rounded-lg border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-muted/30',
                   selected.has(gate.id) && 'border-primary/50 bg-muted/20',

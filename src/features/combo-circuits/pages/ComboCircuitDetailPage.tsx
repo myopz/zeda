@@ -1,7 +1,7 @@
 import { ArrowLeft, ChevronRight, Copy, Redo2, Save, Undo2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, useNavigate, useParams } from 'react-router'
+import { Link, useLocation, useNavigate, useParams } from 'react-router'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { listGates } from '@/features/logic-gates/db/repository'
@@ -14,6 +14,7 @@ import { CircuitSidePanel } from '../components/CircuitSidePanel'
 import {
   duplicateCircuit,
   getCircuit,
+  listCircuits,
   updateCircuit,
 } from '../db/repository'
 import { buildModuleInternals } from '../lib/internals'
@@ -23,7 +24,7 @@ import type { Bit, CircuitPin, ComboCircuit } from '../types'
 type Draft = ComboCircuit
 
 type DrillFrame = {
-  moduleKey: string
+  key: string
   label: string
   circuit: ComboCircuit
 }
@@ -55,11 +56,15 @@ export function ComboCircuitDetailPage() {
   const { id } = useParams()
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const location = useLocation()
+  const backTo =
+    (location.state as { fromList?: string } | null)?.fromList || '/clc'
 
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [savedFlash, setSavedFlash] = useState(false)
   const [gates, setGates] = useState<LogicGate[]>([])
+  const [allCircuits, setAllCircuits] = useState<ComboCircuit[]>([])
   const history = useHistoryState<Draft | null>(null)
 
   const [drillStack, setDrillStack] = useState<DrillFrame[]>([])
@@ -73,9 +78,14 @@ export function ComboCircuitDetailPage() {
     ;(async () => {
       if (!id) return
       setLoading(true)
-      const [circuit, gateList] = await Promise.all([getCircuit(id), listGates()])
+      const [circuit, gateList, circuitList] = await Promise.all([
+        getCircuit(id),
+        listGates(),
+        listCircuits(),
+      ])
       if (cancelled) return
       setGates(gateList)
+      setAllCircuits(circuitList)
       if (!circuit) {
         setNotFound(true)
         setLoading(false)
@@ -104,6 +114,22 @@ export function ComboCircuitDetailPage() {
     return map
   }, [gates])
 
+  const circuitMap = useMemo(() => {
+    const map = new Map<string, ComboCircuit>()
+    for (const c of allCircuits) map.set(c.id, c)
+    if (rootCircuit) map.set(rootCircuit.id, rootCircuit)
+    return map
+  }, [allCircuits, rootCircuit])
+
+  const groupOptions = useMemo(() => {
+    const set = new Set<string>()
+    for (const c of allCircuits) {
+      if (c.group) set.add(c.group)
+    }
+    if (rootCircuit?.group) set.add(rootCircuit.group)
+    return [...set]
+  }, [allCircuits, rootCircuit])
+
   useEffect(() => {
     if (!viewing) return
     setSimInputs(defaultInputs(viewing))
@@ -112,15 +138,20 @@ export function ComboCircuitDetailPage() {
   const evalState = useMemo(() => {
     if (!viewing) return { ok: false as const, message: '' }
     try {
-      const result = evaluateCircuit(viewing, simInputs, (node) => {
-        if (node.ref.builtinKey) {
-          for (const g of gateMap.values()) {
-            if (g.builtinKey === node.ref.builtinKey) return g
+      const result = evaluateCircuit(
+        viewing,
+        simInputs,
+        (node) => {
+          if (node.ref.builtinKey) {
+            for (const g of gateMap.values()) {
+              if (g.builtinKey === node.ref.builtinKey) return g
+            }
           }
-        }
-        if (node.ref.gateId) return gateMap.get(node.ref.gateId)
-        return undefined
-      })
+          if (node.ref.gateId) return gateMap.get(node.ref.gateId)
+          return undefined
+        },
+        (circuitId) => circuitMap.get(circuitId),
+      )
       return { ok: true as const, ...result }
     } catch (err) {
       return {
@@ -131,7 +162,7 @@ export function ComboCircuitDetailPage() {
             : String(err),
       }
     }
-  }, [viewing, simInputs, gateMap])
+  }, [viewing, simInputs, gateMap, circuitMap])
 
   const commit = (next: Draft) => {
     if (inDrill) return
@@ -159,11 +190,28 @@ export function ComboCircuitDetailPage() {
       if (!internals) return
       setDrillStack((prev) => [
         ...prev,
-        { moduleKey, label: moduleLabel(moduleKey), circuit: internals },
+        { key: `module:${moduleKey}`, label: moduleLabel(moduleKey), circuit: internals },
       ])
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [gates, t],
+  )
+
+  const onDrillCircuit = useCallback(
+    (circuitId: string) => {
+      const target = circuitMap.get(circuitId)
+      if (!target) return
+      setDrillStack((prev) => [
+        ...prev,
+        {
+          key: `circuit:${circuitId}`,
+          label: displayName(target),
+          circuit: structuredClone(target),
+        },
+      ])
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [circuitMap, t],
   )
 
   const popDrillTo = (index: number) => {
@@ -173,6 +221,23 @@ export function ComboCircuitDetailPage() {
     }
     setDrillStack((prev) => prev.slice(0, index + 1))
   }
+
+  const popDrillOne = useCallback(() => {
+    setDrillStack((prev) => (prev.length <= 1 ? [] : prev.slice(0, -1)))
+  }, [])
+
+  useEffect(() => {
+    if (!inDrill) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      const tag = (e.target as HTMLElement | null)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      e.preventDefault()
+      popDrillOne()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [inDrill, popDrillOne])
 
   const onSideCollapsedChange = (collapsed: boolean) => {
     setSideCollapsed(collapsed)
@@ -239,7 +304,7 @@ export function ComboCircuitDetailPage() {
   const onCopyAsCustom = async () => {
     if (!rootCircuit) return
     const copy = await duplicateCircuit(rootCircuit.id, t('circuits.copySuffix'))
-    navigate(`/clc/${copy.id}`)
+    navigate(`/clc/${copy.id}`, { state: location.state })
   }
 
   if (loading) {
@@ -251,7 +316,7 @@ export function ComboCircuitDetailPage() {
       <div className="space-y-3">
         <p className="text-sm text-muted-foreground">{t('common.empty')}</p>
         <Button asChild variant="outline">
-          <Link to="/clc">
+          <Link to={backTo}>
             <ArrowLeft /> {t('common.back')}
           </Link>
         </Button>
@@ -264,7 +329,7 @@ export function ComboCircuitDetailPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-start gap-3">
           <Button asChild variant="outline" size="icon" className="mt-0.5 shrink-0">
-            <Link to="/clc" aria-label={t('common.back')}>
+            <Link to={backTo} aria-label={t('common.back')}>
               <ArrowLeft />
             </Link>
           </Button>
@@ -332,6 +397,18 @@ export function ComboCircuitDetailPage() {
 
       <div className="overflow-hidden rounded-lg border">
         <div className="flex flex-wrap items-center gap-1 border-b bg-card px-3 py-2 text-xs">
+          {inDrill ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="mr-1 h-7 gap-1 px-2"
+              onClick={popDrillOne}
+            >
+              <ArrowLeft className="size-3.5" />
+              {t('circuits.drillBack')}
+            </Button>
+          ) : null}
           <button
             type="button"
             className={cn(
@@ -344,7 +421,7 @@ export function ComboCircuitDetailPage() {
             {t('circuits.design')}
           </button>
           {drillStack.map((frame, i) => (
-            <span key={`${frame.moduleKey}-${i}`} className="flex items-center gap-1">
+            <span key={`${frame.key}-${i}`} className="flex items-center gap-1">
               <ChevronRight className="size-3 text-muted-foreground" />
               <button
                 type="button"
@@ -360,7 +437,9 @@ export function ComboCircuitDetailPage() {
               </button>
             </span>
           ))}
-          <span className="ml-auto text-muted-foreground">{t('circuits.canvasHint')}</span>
+          <span className="ml-auto text-muted-foreground">
+            {inDrill ? t('circuits.drillHint') : t('circuits.canvasHint')}
+          </span>
         </div>
 
         <div className="flex h-[min(640px,75vh)] min-h-[400px]">
@@ -368,6 +447,8 @@ export function ComboCircuitDetailPage() {
             <CircuitSidePanel
               circuit={rootCircuit}
               gates={gates}
+              circuits={allCircuits}
+              groupOptions={groupOptions}
               readOnly={readOnly}
               collapsed={sideCollapsed}
               onCollapsedChange={onSideCollapsedChange}
@@ -383,11 +464,13 @@ export function ComboCircuitDetailPage() {
             <CircuitCanvas
               circuit={viewing}
               gates={gates}
+              circuits={[...circuitMap.values()]}
               readOnly={readOnly}
               onChange={commit}
               endpointBits={evalState.ok ? evalState.endpointBits : undefined}
               nodeOutBits={evalState.ok ? evalState.nodeOutBits : undefined}
               onDrillModule={onDrillModule}
+              onDrillCircuit={onDrillCircuit}
               onToggleInput={onToggleInput}
             />
           </div>

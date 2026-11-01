@@ -1,9 +1,10 @@
 import { ArrowLeft, Redo2, Save, Undo2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, useParams } from 'react-router'
+import { Link, useLocation, useParams } from 'react-router'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { DraftNumberInput } from '@/components/ui/draft-number-input'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
@@ -49,6 +50,9 @@ function renameInFormulas(
 export function LogicGateDetailPage() {
   const { id } = useParams()
   const { t } = useTranslation()
+  const location = useLocation()
+  const backTo =
+    (location.state as { fromList?: string } | null)?.fromList || '/lgc'
 
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
@@ -156,7 +160,7 @@ export function LogicGateDetailPage() {
       <div className="space-y-3">
         <p className="text-sm text-muted-foreground">{t('common.empty')}</p>
         <Button asChild variant="outline">
-          <Link to="/lgc">
+          <Link to={backTo}>
             <ArrowLeft /> {t('common.back')}
           </Link>
         </Button>
@@ -169,7 +173,7 @@ export function LogicGateDetailPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-start gap-3">
           <Button asChild variant="outline" size="icon" className="mt-0.5 shrink-0">
-            <Link to="/lgc" aria-label={t('common.back')}>
+            <Link to={backTo} aria-label={t('common.back')}>
               <ArrowLeft />
             </Link>
           </Button>
@@ -262,22 +266,18 @@ export function LogicGateDetailPage() {
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1.5">
                 <Label>{t('gates.inputCount')}</Label>
-                <Input
-                  type="number"
-                  min={1}
+                <DraftNumberInput
                   value={gate.inputs.length}
                   disabled={readOnly}
-                  onChange={(e) => onInputCountChange(Number(e.target.value))}
+                  onCommit={onInputCountChange}
                 />
               </div>
               <div className="space-y-1.5">
                 <Label>{t('gates.outputCount')}</Label>
-                <Input
-                  type="number"
-                  min={1}
+                <DraftNumberInput
                   value={gate.outputs.length}
                   disabled={readOnly}
-                  onChange={(e) => onOutputCountChange(Number(e.target.value))}
+                  onCommit={onOutputCountChange}
                 />
               </div>
             </div>

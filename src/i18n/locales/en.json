@@ -104,6 +104,11 @@
     "subtitle": "Manage built-in and custom combinational circuits",
     "name": "Name",
     "description": "Description",
+    "group": "Group",
+    "groupDefault": "Default",
+    "groupCustom": "Custom…",
+    "groupCustomPlaceholder": "Enter a custom group name",
+    "groupHint": "Prefer a preset group (i18n-friendly); custom names are allowed",
     "type": "Type",
     "builtin": "Built-in",
     "custom": "Custom",
@@ -153,11 +158,13 @@
     "copyAsCustom": "Duplicate as custom",
     "simError": "Simulation error: {{message}}",
     "canvasHint": "Click input pins to toggle; double-click a block for internals; Delete to remove",
+    "drillBack": "Back up",
+    "drillHint": "Viewing internals; go back up or click Design for the top level",
     "category": {
       "adder": "Adders",
       "encoder": "Encoders",
       "decoder": "Decoders",
-      "ttl": "74LS"
+      "ttl": "74LS Series"
     },
     "modules": {
       "half_adder": "Half Adder",

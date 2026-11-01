@@ -1,12 +1,21 @@
 import { compareSnowflakeId, createId } from '@/lib/utils'
-import type { CircuitExportPayload, ComboCircuit } from '../types'
+import {
+  DEFAULT_CIRCUIT_GROUP,
+  type CircuitExportPayload,
+  type ComboCircuit,
+} from '../types'
 import { db, ensureSeeded } from './database'
 import { createBlankCustomCircuit } from './seed'
 
 export function normalizeCircuit(raw: ComboCircuit): ComboCircuit {
+  const group =
+    typeof raw.group === 'string' && raw.group.trim()
+      ? raw.group.trim()
+      : DEFAULT_CIRCUIT_GROUP
   return {
     ...raw,
     description: raw.description ?? '',
+    group,
     inputs: raw.inputs ?? [],
     outputs: raw.outputs ?? [],
     nodes: raw.nodes ?? [],

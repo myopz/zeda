@@ -104,6 +104,11 @@
     "subtitle": "管理内置与自定义组合逻辑电路",
     "name": "名称",
     "description": "描述",
+    "group": "分组",
+    "groupDefault": "默认",
+    "groupCustom": "自定义…",
+    "groupCustomPlaceholder": "输入自定义分组名",
+    "groupHint": "优先选择预设分组（便于多语言）；也可自定义",
     "type": "类型",
     "builtin": "内置",
     "custom": "自定义",
@@ -153,11 +158,13 @@
     "copyAsCustom": "复制为自定义",
     "simError": "仿真错误：{{message}}",
     "canvasHint": "点击输入引脚切换电平；双击封装块查看内部；Delete 删除选中",
+    "drillBack": "返回上层",
+    "drillHint": "正在查看内部结构；可返回上层或点「设计」回到顶层",
     "category": {
       "adder": "加法器",
       "encoder": "编码器",
       "decoder": "译码器",
-      "ttl": "74LS"
+      "ttl": "74LS系列"
     },
     "modules": {
       "half_adder": "半加器",

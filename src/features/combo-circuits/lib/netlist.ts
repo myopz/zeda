@@ -17,6 +17,8 @@ export type GateResolver = (
   node: Extract<CircuitNode, { kind: 'gate' }>,
 ) => LogicGate | undefined
 
+export type CircuitResolver = (circuitId: string) => ComboCircuit | undefined
+
 export type CircuitEvalResult = {
   outputs: Record<string, Bit>
   /** endpoint key (`nodeId::pinId`) -> bit */
@@ -69,11 +71,20 @@ function parseEndpointKey(key: string): WireEndpoint {
   return { nodeId: key.slice(0, idx), pinId: key.slice(idx + 2) }
 }
 
-function nodeInputPinIds(node: CircuitNode, resolveGate: GateResolver): string[] {
+function nodeInputPinIds(
+  node: CircuitNode,
+  resolveGate: GateResolver,
+  resolveCircuit: CircuitResolver,
+): string[] {
   if (node.kind === 'module') {
     const mod = getModule(node.moduleKey)
     if (!mod) throw new NetlistError(`Unknown module "${node.moduleKey}"`)
     return mod.inputs.map((p) => p.id)
+  }
+  if (node.kind === 'circuit') {
+    const sub = resolveCircuit(node.circuitId)
+    if (!sub) throw new NetlistError(`Unknown circuit "${node.circuitId}"`)
+    return sub.inputs.map((p) => p.id)
   }
   const gate = resolveGate(node)
   if (!gate) {
@@ -83,11 +94,20 @@ function nodeInputPinIds(node: CircuitNode, resolveGate: GateResolver): string[]
   return gate.inputs.map((p) => p.id)
 }
 
-function nodeOutputPinIds(node: CircuitNode, resolveGate: GateResolver): string[] {
+function nodeOutputPinIds(
+  node: CircuitNode,
+  resolveGate: GateResolver,
+  resolveCircuit: CircuitResolver,
+): string[] {
   if (node.kind === 'module') {
     const mod = getModule(node.moduleKey)
     if (!mod) throw new NetlistError(`Unknown module "${node.moduleKey}"`)
     return mod.outputs.map((p) => p.id)
+  }
+  if (node.kind === 'circuit') {
+    const sub = resolveCircuit(node.circuitId)
+    if (!sub) throw new NetlistError(`Unknown circuit "${node.circuitId}"`)
+    return sub.outputs.map((p) => p.id)
   }
   const gate = resolveGate(node)
   if (!gate) {
@@ -101,11 +121,12 @@ function isNodeOutput(
   circuit: ComboCircuit,
   ep: WireEndpoint,
   resolveGate: GateResolver,
+  resolveCircuit: CircuitResolver,
 ): boolean {
   if (ep.nodeId === 'io') return false
   const node = circuit.nodes.find((n) => n.id === ep.nodeId)
   if (!node) throw new NetlistError(`Wire references missing node ${ep.nodeId}`)
-  return nodeOutputPinIds(node, resolveGate).includes(ep.pinId)
+  return nodeOutputPinIds(node, resolveGate, resolveCircuit).includes(ep.pinId)
 }
 
 function isCircuitInput(circuit: ComboCircuit, ep: WireEndpoint): boolean {
@@ -116,14 +137,19 @@ function isDriverEndpoint(
   circuit: ComboCircuit,
   ep: WireEndpoint,
   resolveGate: GateResolver,
+  resolveCircuit: CircuitResolver,
 ): boolean {
-  return isCircuitInput(circuit, ep) || isNodeOutput(circuit, ep, resolveGate)
+  return (
+    isCircuitInput(circuit, ep) ||
+    isNodeOutput(circuit, ep, resolveGate, resolveCircuit)
+  )
 }
 
 function topologicalSort(
   circuit: ComboCircuit,
   netOf: Map<string, string>,
   resolveGate: GateResolver,
+  resolveCircuit: CircuitResolver,
 ): string[] {
   const nodeIds = circuit.nodes.map((n) => n.id)
   const deps = new Map<string, Set<string>>()
@@ -131,7 +157,7 @@ function topologicalSort(
 
   const netDriverNode = new Map<string, string>()
   for (const node of circuit.nodes) {
-    for (const pinId of nodeOutputPinIds(node, resolveGate)) {
+    for (const pinId of nodeOutputPinIds(node, resolveGate, resolveCircuit)) {
       const key = endpointKey({ nodeId: node.id, pinId })
       const root = netOf.get(key)
       if (root) netDriverNode.set(root, node.id)
@@ -139,7 +165,7 @@ function topologicalSort(
   }
 
   for (const node of circuit.nodes) {
-    for (const pinId of nodeInputPinIds(node, resolveGate)) {
+    for (const pinId of nodeInputPinIds(node, resolveGate, resolveCircuit)) {
       const key = endpointKey({ nodeId: node.id, pinId })
       const root = netOf.get(key)
       if (!root) continue
@@ -212,7 +238,14 @@ export function evaluateCircuit(
   circuit: ComboCircuit,
   inputBits: Record<string, Bit>,
   resolveGate: GateResolver,
+  resolveCircuit: CircuitResolver = () => undefined,
+  stack: string[] = [],
 ): CircuitEvalResult {
+  if (stack.includes(circuit.id)) {
+    throw new NetlistError(`Circular circuit reference involving "${circuit.name}"`)
+  }
+  const nextStack = [...stack, circuit.id]
+
   const uf = new UnionFind()
 
   for (const p of circuit.inputs) {
@@ -223,8 +256,8 @@ export function evaluateCircuit(
   }
   for (const node of circuit.nodes) {
     for (const pinId of [
-      ...nodeInputPinIds(node, resolveGate),
-      ...nodeOutputPinIds(node, resolveGate),
+      ...nodeInputPinIds(node, resolveGate, resolveCircuit),
+      ...nodeOutputPinIds(node, resolveGate, resolveCircuit),
     ]) {
       uf.add(endpointKey({ nodeId: node.id, pinId }))
     }
@@ -247,7 +280,7 @@ export function evaluateCircuit(
   for (const [, members] of groups) {
     const drivers = members
       .map(parseEndpointKey)
-      .filter((ep) => isDriverEndpoint(circuit, ep, resolveGate))
+      .filter((ep) => isDriverEndpoint(circuit, ep, resolveGate, resolveCircuit))
     if (drivers.length > 1) {
       throw new NetlistError(
         `Multiple drivers on the same net (${drivers.map((d) => endpointKey(d)).join(', ')})`,
@@ -256,14 +289,16 @@ export function evaluateCircuit(
   }
 
   for (const node of circuit.nodes) {
-    for (const pinId of nodeInputPinIds(node, resolveGate)) {
+    for (const pinId of nodeInputPinIds(node, resolveGate, resolveCircuit)) {
       const key = endpointKey({ nodeId: node.id, pinId })
       const root = netOf.get(key)
       if (!root) throw new NetlistError(`Floating input ${node.id}/${pinId}`)
       const members = groups.get(root) ?? [key]
       const drivers = members
         .map(parseEndpointKey)
-        .filter((ep) => isDriverEndpoint(circuit, ep, resolveGate))
+        .filter((ep) =>
+          isDriverEndpoint(circuit, ep, resolveGate, resolveCircuit),
+        )
       if (drivers.length === 0) {
         throw new NetlistError(`Floating input ${node.id}/${pinId}`)
       }
@@ -277,13 +312,13 @@ export function evaluateCircuit(
     const members = groups.get(root) ?? [key]
     const drivers = members
       .map(parseEndpointKey)
-      .filter((ep) => isDriverEndpoint(circuit, ep, resolveGate))
+      .filter((ep) => isDriverEndpoint(circuit, ep, resolveGate, resolveCircuit))
     if (drivers.length === 0) {
       throw new NetlistError(`Floating circuit output ${p.name}`)
     }
   }
 
-  const order = topologicalSort(circuit, netOf, resolveGate)
+  const order = topologicalSort(circuit, netOf, resolveGate, resolveCircuit)
   const nodeById = new Map(circuit.nodes.map((n) => [n.id, n]))
   const netBits = new Map<string, Bit>()
 
@@ -320,6 +355,24 @@ export function evaluateCircuit(
       const outBits = evaluateGateStrict(gate, inBits)
       nodeOutBits[nodeId] = outBits
       for (const [pinId, v] of Object.entries(outBits)) {
+        setNetBit({ nodeId, pinId }, v)
+      }
+    } else if (node.kind === 'circuit') {
+      const sub = resolveCircuit(node.circuitId)
+      if (!sub) throw new NetlistError(`Unknown circuit "${node.circuitId}"`)
+      const inBits: Record<string, Bit> = {}
+      for (const pin of sub.inputs) {
+        inBits[pin.id] = getNetBit({ nodeId, pinId: pin.id })
+      }
+      const nested = evaluateCircuit(
+        sub,
+        inBits,
+        resolveGate,
+        resolveCircuit,
+        nextStack,
+      )
+      nodeOutBits[nodeId] = nested.outputs
+      for (const [pinId, v] of Object.entries(nested.outputs)) {
         setNetBit({ nodeId, pinId }, v)
       }
     } else {

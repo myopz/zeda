@@ -14,5 +14,8 @@ export default defineConfig({
       '@': path.resolve(rootDir, './src'),
     },
   },
+  server: {
+    host: true,
+  },
 })
 

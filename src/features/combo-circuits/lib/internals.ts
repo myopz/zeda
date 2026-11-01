@@ -344,6 +344,7 @@ function finish(
     description,
     kind: 'builtin',
     builtinKey: moduleKey,
+    group: MODULES[moduleKey].category,
     inputs,
     outputs,
     nodes: spaceNodes(b.nodes),

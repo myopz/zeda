@@ -2,11 +2,16 @@ import { createSeedGates } from '@/features/logic-gates/db/seed'
 import { createId } from '@/lib/utils'
 import { snowflake } from '@/lib/snowflake'
 import { buildModuleInternals } from '../lib/internals'
-import { MODULE_KEYS, type ModuleKey } from '../lib/modules'
-import type { ComboCircuit, CircuitWire, WireEndpoint } from '../types'
+import { MODULE_KEYS, type ModuleCategory, type ModuleKey } from '../lib/modules'
+import {
+  DEFAULT_CIRCUIT_GROUP,
+  type ComboCircuit,
+  type CircuitWire,
+  type WireEndpoint,
+} from '../types'
 
 /** Bump when gate-level layout spacing changes so IndexedDB seeds re-apply. */
-export const CIRCUIT_LAYOUT_REV = 6
+export const CIRCUIT_LAYOUT_REV = 7
 
 const CIRCUIT_IDS: Record<ModuleKey, string> = {
   half_adder: snowflake.fixed(101),
@@ -55,6 +60,19 @@ const DESCRIPTIONS: Record<ModuleKey, string> = {
   '74ls283': '4× full adder (drill into gates)',
 }
 
+const GROUPS: Record<ModuleKey, ModuleCategory> = {
+  half_adder: 'adder',
+  full_adder: 'adder',
+  encoder_4_2: 'encoder',
+  priority_encoder_8_3: 'encoder',
+  decoder_2_4: 'decoder',
+  decoder_3_8: 'decoder',
+  seven_seg_decoder: 'decoder',
+  '74ls138': 'ttl',
+  '74ls148': 'ttl',
+  '74ls283': 'ttl',
+}
+
 function remapEndpoint(
   ep: WireEndpoint,
   pinMap: Map<string, string>,
@@ -98,6 +116,7 @@ function buildModuleCircuit(key: ModuleKey): ComboCircuit {
     description: DESCRIPTIONS[key],
     kind: isCustomSeed ? 'custom' : 'builtin',
     builtinKey: isCustomSeed ? undefined : key,
+    group: GROUPS[key],
     inputs,
     outputs,
     nodes: view.nodes,
@@ -135,6 +154,7 @@ export function createBlankCustomCircuit(name: string): ComboCircuit {
     name,
     description: '',
     kind: 'custom',
+    group: DEFAULT_CIRCUIT_GROUP,
     inputs: [
       { id: createId('pin'), name: 'A' },
       { id: createId('pin'), name: 'B' },

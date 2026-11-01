@@ -23,6 +23,7 @@ export type DeviceNodeData = {
   outputs: { id: string; name: string }[]
   gate?: Pick<LogicGate, 'builtinKey' | 'inputs' | 'outputs' | 'name'>
   moduleKey?: string
+  circuitId?: string
   drillable?: boolean
   inputBits?: Record<string, Bit>
   outputBits?: Record<string, Bit>

@@ -3,10 +3,14 @@ import {
   Controls,
   ReactFlow,
   ReactFlowProvider,
+  applyEdgeChanges,
+  applyNodeChanges,
   useReactFlow,
   type Connection,
   type Edge,
+  type EdgeChange,
   type Node,
+  type NodeChange,
   type OnSelectionChangeParams,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
@@ -30,7 +34,13 @@ import {
   type IoNodeData,
   type NodeHighlight,
 } from './canvasNodes'
-import { PALETTE_MIME, type PalettePayload } from './ModulePalette'
+import {
+  PALETTE_MIME,
+  clearPaletteDrag,
+  notePaletteDragMove,
+  peekPaletteDrag,
+  type PalettePayload,
+} from './ModulePalette'
 
 /** Selection neighborhood stroke — distinct from sim amber (#f59e0b) / idle slate. */
 const SEL_STROKE = '#6366f1'
@@ -153,12 +163,15 @@ function paintSelection(
 type Props = {
   circuit: ComboCircuit
   gates: LogicGate[]
+  /** All circuits for nested refs / labels (may include current). */
+  circuits?: ComboCircuit[]
   readOnly?: boolean
   onChange: (next: ComboCircuit) => void
   /** Simulation endpoint bits (`nodeId::pinId` -> bit) for wire/pin highlight */
   endpointBits?: Record<string, Bit>
   nodeOutBits?: Record<string, Record<string, Bit>>
   onDrillModule?: (moduleKey: string) => void
+  onDrillCircuit?: (circuitId: string) => void
   /** Toggle a circuit input pin level (simulation) */
   onToggleInput?: (pinId: string) => void
   className?: string
@@ -192,7 +205,7 @@ function ioColumnXs(nodes: CircuitNode[]): { inX: number; outX: number } {
   let minX = Number.POSITIVE_INFINITY
   let maxRight = Number.NEGATIVE_INFINITY
   for (const n of nodes) {
-    const w = n.kind === 'module' ? DEVICE_W_MODULE : DEVICE_W_GATE
+    const w = n.kind === 'gate' ? DEVICE_W_GATE : DEVICE_W_MODULE
     minX = Math.min(minX, n.position.x)
     maxRight = Math.max(maxRight, n.position.x + w)
   }
@@ -205,9 +218,11 @@ function ioColumnXs(nodes: CircuitNode[]): { inX: number; outX: number } {
 function buildFlowGraph(
   circuit: ComboCircuit,
   gates: LogicGate[],
+  circuitsById: Map<string, ComboCircuit>,
   endpointBits?: Record<string, Bit>,
   nodeOutBits?: Record<string, Record<string, Bit>>,
   moduleLabel?: (key: string) => string,
+  circuitLabel?: (c: ComboCircuit) => string,
   onToggleInput?: (pinId: string) => void,
 ): { nodes: Node[]; edges: Edge[] } {
   const gateById = new Map(gates.map((g) => [g.id, g]))
@@ -226,6 +241,7 @@ function buildFlowGraph(
       type: 'circuitIo',
       position: { x: inX, y: IO_TOP + i * IO_ROW },
       zIndex: IO_Z,
+      deletable: false,
       data: {
         role: 'in',
         label: pin.name,
@@ -244,6 +260,7 @@ function buildFlowGraph(
       type: 'circuitIo',
       position: { x: outX, y: IO_TOP + i * IO_ROW },
       zIndex: IO_Z,
+      deletable: false,
       data: {
         role: 'out',
         label: pin.name,
@@ -260,6 +277,7 @@ function buildFlowGraph(
     let label = node.id
     let gate: LogicGate | undefined
     let moduleKey: string | undefined
+    let circuitId: string | undefined
     let drillable = false
 
     if (node.kind === 'gate') {
@@ -272,6 +290,17 @@ function buildFlowGraph(
         label = gate.name
       } else {
         label = `Missing gate`
+      }
+    } else if (node.kind === 'circuit') {
+      circuitId = node.circuitId
+      const ref = circuitsById.get(node.circuitId)
+      if (ref) {
+        inputs = ref.inputs
+        outputs = ref.outputs
+        label = circuitLabel?.(ref) ?? ref.name
+        drillable = true
+      } else {
+        label = `Missing circuit`
       }
     } else {
       moduleKey = node.moduleKey
@@ -302,6 +331,7 @@ function buildFlowGraph(
         inputs,
         outputs,
         moduleKey,
+        circuitId,
         drillable,
         inputBits,
         outputBits,
@@ -352,11 +382,13 @@ function buildFlowGraph(
 function CanvasInner({
   circuit,
   gates,
+  circuits = [],
   readOnly,
   onChange,
   endpointBits,
   nodeOutBits,
   onDrillModule,
+  onDrillCircuit,
   onToggleInput,
   className,
 }: Props) {
@@ -366,6 +398,13 @@ function CanvasInner({
     nodes: [],
     edges: [],
   })
+  const circuitRef = useRef(circuit)
+  circuitRef.current = circuit
+
+  const circuitsById = useMemo(
+    () => new Map(circuits.map((c) => [c.id, c])),
+    [circuits],
+  )
 
   const moduleLabel = useCallback(
     (key: string) => {
@@ -376,17 +415,40 @@ function CanvasInner({
     [t],
   )
 
+  const circuitLabel = useCallback(
+    (c: ComboCircuit) => {
+      if (c.builtinKey) {
+        const key = `circuits.modules.${c.builtinKey}`
+        const localized = t(key)
+        if (localized !== key) return localized
+      }
+      return c.name
+    },
+    [t],
+  )
+
   const graph = useMemo(
     () =>
       buildFlowGraph(
         circuit,
         gates,
+        circuitsById,
         endpointBits,
         nodeOutBits,
         moduleLabel,
+        circuitLabel,
         onToggleInput,
       ),
-    [circuit, gates, endpointBits, nodeOutBits, moduleLabel, onToggleInput],
+    [
+      circuit,
+      gates,
+      circuitsById,
+      endpointBits,
+      nodeOutBits,
+      moduleLabel,
+      circuitLabel,
+      onToggleInput,
+    ],
   )
 
   const [nodes, setNodes] = useState<Node[]>(() =>
@@ -426,11 +488,12 @@ function CanvasInner({
 
   const commitFromGraph = useCallback(
     (nextNodes: Node[], nextEdges: Edge[]) => {
+      const c = circuitRef.current
       const deviceNodes: CircuitNode[] = []
 
       for (const n of nextNodes) {
         if (n.id.startsWith('io:')) continue
-        const existing = circuit.nodes.find((cn) => cn.id === n.id)
+        const existing = c.nodes.find((cn) => cn.id === n.id)
         if (!existing) continue
         deviceNodes.push({ ...existing, position: n.position })
       }
@@ -451,14 +514,39 @@ function CanvasInner({
         }
       })
 
-      onChange({
-        ...circuit,
+      const next: ComboCircuit = {
+        ...c,
         nodes: deviceNodes,
         wires,
         updatedAt: Date.now(),
-      })
+      }
+      circuitRef.current = next
+      onChange(next)
     },
-    [circuit, onChange],
+    [onChange],
+  )
+
+  const removeFromCircuit = useCallback(
+    (removeNodeIds: Set<string>, removeEdgeIds: Set<string>) => {
+      if (removeNodeIds.size === 0 && removeEdgeIds.size === 0) return
+      const c = circuitRef.current
+      const next: ComboCircuit = {
+        ...c,
+        nodes: c.nodes.filter((n) => !removeNodeIds.has(n.id)),
+        wires: c.wires.filter(
+          (w) =>
+            !removeEdgeIds.has(w.id) &&
+            !removeNodeIds.has(w.from.nodeId) &&
+            !removeNodeIds.has(w.to.nodeId),
+        ),
+        updatedAt: Date.now(),
+      }
+      // Keep ref in sync when RF emits node+edge removes in the same tick.
+      circuitRef.current = next
+      onChange(next)
+      setSelected({ nodes: [], edges: [] })
+    },
+    [onChange],
   )
 
   const onConnect = useCallback(
@@ -466,6 +554,7 @@ function CanvasInner({
       if (readOnly || !connection.source || !connection.target) return
       if (!connection.sourceHandle || !connection.targetHandle) return
 
+      const c = circuitRef.current
       const wire: CircuitWire = {
         id: createId('wire'),
         from: {
@@ -477,19 +566,21 @@ function CanvasInner({
           pinId: connection.targetHandle,
         },
       }
-      onChange({
-        ...circuit,
-        wires: [...circuit.wires, wire],
+      const next: ComboCircuit = {
+        ...c,
+        wires: [...c.wires, wire],
         updatedAt: Date.now(),
-      })
+      }
+      circuitRef.current = next
+      onChange(next)
     },
-    [circuit, onChange, readOnly],
+    [onChange, readOnly],
   )
 
   const onNodeDragStop = useCallback(() => {
     if (readOnly) return
-    commitFromGraph(nodes, edges)
-  }, [commitFromGraph, edges, nodes, readOnly])
+    commitFromGraph(nodesRef.current, edgesRef.current)
+  }, [commitFromGraph, readOnly])
 
   const onSelectionChange = useCallback((params: OnSelectionChangeParams) => {
     const nodeIds = params.nodes.map((n) => n.id)
@@ -504,64 +595,64 @@ function CanvasInner({
   const onNodeDoubleClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
       const data = node.data as DeviceNodeData
+      if (data.circuitId && onDrillCircuit) {
+        onDrillCircuit(data.circuitId)
+        return
+      }
       if (data.drillable && data.moduleKey && onDrillModule) {
         onDrillModule(data.moduleKey)
       }
     },
-    [onDrillModule],
+    [onDrillCircuit, onDrillModule],
   )
 
-  useEffect(() => {
-    if (readOnly) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Delete' && e.key !== 'Backspace') return
-      const tag = (e.target as HTMLElement | null)?.tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+  const onNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      const removes = changes.filter((ch) => ch.type === 'remove')
+      const safeChanges =
+        readOnly
+          ? changes.filter((ch) => ch.type === 'select' || ch.type === 'dimensions')
+          : changes.filter((ch) => {
+              if (ch.type !== 'remove') return true
+              return !ch.id.startsWith('io:')
+            })
 
+      setNodes((prev) => applyNodeChanges(safeChanges, prev))
+
+      if (readOnly || removes.length === 0) return
       const removeNodeIds = new Set(
-        selected.nodes.filter((id) => !id.startsWith('io:')),
+        removes.map((ch) => ch.id).filter((id) => !id.startsWith('io:')),
       )
-      const removeEdgeIds = new Set(selected.edges)
+      if (removeNodeIds.size === 0) return
+      removeFromCircuit(removeNodeIds, new Set())
+    },
+    [readOnly, removeFromCircuit],
+  )
 
-      if (removeNodeIds.size === 0 && removeEdgeIds.size === 0) return
-      e.preventDefault()
+  const onEdgesChange = useCallback(
+    (changes: EdgeChange[]) => {
+      const removes = changes.filter((ch) => ch.type === 'remove')
+      const safeChanges = readOnly
+        ? changes.filter((ch) => ch.type === 'select')
+        : changes
 
-      onChange({
-        ...circuit,
-        nodes: circuit.nodes.filter((n) => !removeNodeIds.has(n.id)),
-        wires: circuit.wires.filter(
-          (w) =>
-            !removeEdgeIds.has(w.id) &&
-            !removeNodeIds.has(w.from.nodeId) &&
-            !removeNodeIds.has(w.to.nodeId),
-        ),
-        updatedAt: Date.now(),
-      })
-      setSelected({ nodes: [], edges: [] })
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [circuit, onChange, readOnly, selected])
+      setEdges((prev) => applyEdgeChanges(safeChanges, prev))
 
-  const onDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'copy'
-  }, [])
+      if (readOnly || removes.length === 0) return
+      removeFromCircuit(
+        new Set(),
+        new Set(removes.map((ch) => ch.id)),
+      )
+    },
+    [readOnly, removeFromCircuit],
+  )
 
-  const onDrop = useCallback(
-    (e: React.DragEvent) => {
+  const placePayload = useCallback(
+    (payload: PalettePayload, clientX: number, clientY: number) => {
       if (readOnly) return
-      e.preventDefault()
-      const raw = e.dataTransfer.getData(PALETTE_MIME)
-      if (!raw) return
-      let payload: PalettePayload
-      try {
-        payload = JSON.parse(raw) as PalettePayload
-      } catch {
-        return
-      }
-      const position = screenToFlowPosition({ x: e.clientX, y: e.clientY })
+      const position = screenToFlowPosition({ x: clientX, y: clientY })
       const id = createId('node')
+      const c = circuitRef.current
       let node: CircuitNode
       if (payload.kind === 'gate') {
         node = {
@@ -573,6 +664,13 @@ function CanvasInner({
           },
           position,
         }
+      } else if (payload.kind === 'circuit') {
+        node = {
+          id,
+          kind: 'circuit',
+          circuitId: payload.circuitId,
+          position,
+        }
       } else {
         node = {
           id,
@@ -581,14 +679,70 @@ function CanvasInner({
           position,
         }
       }
-      onChange({
-        ...circuit,
-        nodes: [...circuit.nodes, node],
+      const next: ComboCircuit = {
+        ...c,
+        nodes: [...c.nodes, node],
         updatedAt: Date.now(),
-      })
+      }
+      circuitRef.current = next
+      onChange(next)
     },
-    [circuit, onChange, readOnly, screenToFlowPosition],
+    [onChange, readOnly, screenToFlowPosition],
   )
+
+  const onDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+  }, [])
+
+  const onDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault()
+      if (readOnly) return
+      const raw = e.dataTransfer.getData(PALETTE_MIME)
+      if (!raw) return
+      let payload: PalettePayload
+      try {
+        payload = JSON.parse(raw) as PalettePayload
+      } catch {
+        return
+      }
+      placePayload(payload, e.clientX, e.clientY)
+    },
+    [placePayload, readOnly],
+  )
+
+  // Touch / pointer drop from ModulePalette (HTML5 DnD is unreliable on mobile).
+  useEffect(() => {
+    if (readOnly) return
+    const onMove = (e: PointerEvent) => {
+      notePaletteDragMove(e.clientX, e.clientY)
+    }
+    const onUp = (e: PointerEvent) => {
+      // Desktop mouse uses HTML5 DnD (`onDrop`); this path is for touch / pen.
+      if (e.pointerType === 'mouse') return
+      const drag = peekPaletteDrag()
+      if (!drag?.moved) {
+        clearPaletteDrag()
+        return
+      }
+      const el = document.elementFromPoint(e.clientX, e.clientY)
+      if (!el?.closest('[data-circuit-canvas-drop]')) {
+        clearPaletteDrag()
+        return
+      }
+      clearPaletteDrag()
+      placePayload(drag.payload, e.clientX, e.clientY)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
+    }
+  }, [placePayload, readOnly])
 
   return (
     <div
@@ -597,43 +751,18 @@ function CanvasInner({
         className,
       )}
     >
-      <div className="min-h-0 flex-1" onDragOver={onDragOver} onDrop={onDrop}>
+      <div
+        className="min-h-0 flex-1"
+        data-circuit-canvas-drop
+        onDragOver={onDragOver}
+        onDrop={onDrop}
+      >
         <ReactFlow
           nodes={nodes}
           edges={edges}
           nodeTypes={circuitNodeTypes}
-          onNodesChange={(changes) => {
-            setNodes((prev) => {
-              let next = [...prev]
-              for (const ch of changes) {
-                if (ch.type === 'position' && ch.position) {
-                  next = next.map((n) =>
-                    n.id === ch.id
-                      ? { ...n, position: ch.position!, dragging: ch.dragging }
-                      : n,
-                  )
-                } else if (ch.type === 'select') {
-                  next = next.map((n) =>
-                    n.id === ch.id ? { ...n, selected: ch.selected } : n,
-                  )
-                }
-              }
-              return next
-            })
-          }}
-          onEdgesChange={(changes) => {
-            setEdges((prev) => {
-              let next = [...prev]
-              for (const ch of changes) {
-                if (ch.type === 'select') {
-                  next = next.map((e) =>
-                    e.id === ch.id ? { ...e, selected: ch.selected } : e,
-                  )
-                }
-              }
-              return next
-            })
-          }}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           onNodeDragStop={onNodeDragStop}
           onNodeDoubleClick={onNodeDoubleClick}
@@ -641,6 +770,7 @@ function CanvasInner({
           nodesDraggable={!readOnly}
           nodesConnectable={!readOnly}
           elementsSelectable
+          deleteKeyCode={readOnly ? null : ['Backspace', 'Delete']}
           fitView
           proOptions={{ hideAttribution: true }}
         >

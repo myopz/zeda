@@ -16,6 +16,9 @@ type SideTab = 'meta' | 'palette'
 type Props = {
   circuit: ComboCircuit
   gates: LogicGate[]
+  /** All circuits for palette modules (caller excludes self if needed) */
+  circuits?: ComboCircuit[]
+  groupOptions?: string[]
   readOnly?: boolean
   collapsed?: boolean
   onCollapsedChange?: (collapsed: boolean) => void
@@ -38,6 +41,8 @@ function readTab(): SideTab {
 export function CircuitSidePanel({
   circuit,
   gates,
+  circuits = [],
+  groupOptions = [],
   readOnly,
   collapsed = false,
   onCollapsedChange,
@@ -105,6 +110,7 @@ export function CircuitSidePanel({
       >
         <CircuitMetaPanel
           circuit={circuit}
+          groupOptions={groupOptions}
           readOnly={readOnly}
           embedded
           onChange={onChange}
@@ -118,7 +124,13 @@ export function CircuitSidePanel({
         value="palette"
         className="mt-0 min-h-0 flex-1 overflow-hidden data-[state=inactive]:hidden"
       >
-        <ModulePalette gates={gates} embedded className="h-full" />
+        <ModulePalette
+          gates={gates}
+          circuits={circuits}
+          excludeCircuitId={circuit.id}
+          embedded
+          className="h-full"
+        />
       </TabsContent>
     </Tabs>
   )

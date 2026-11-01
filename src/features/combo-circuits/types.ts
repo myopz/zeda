@@ -24,7 +24,18 @@ export type CircuitModuleNode = {
   position: { x: number; y: number }
 }
 
-export type CircuitNode = CircuitGateNode | CircuitModuleNode
+/** Nested reference to another ComboCircuit (black-box by IO). */
+export type CircuitRefNode = {
+  id: string
+  kind: 'circuit'
+  circuitId: string
+  position: { x: number; y: number }
+}
+
+export type CircuitNode = CircuitGateNode | CircuitModuleNode | CircuitRefNode
+
+/** Default palette / meta group for circuits without a custom group. */
+export const DEFAULT_CIRCUIT_GROUP = 'default'
 
 export type WireEndpoint = {
   /** `'io'` for circuit ports; otherwise a node id */
@@ -44,6 +55,8 @@ export type ComboCircuit = {
   description?: string
   kind: 'builtin' | 'custom'
   builtinKey?: string
+  /** Palette grouping key; free-form, defaults to {@link DEFAULT_CIRCUIT_GROUP}. */
+  group: string
   inputs: CircuitPin[]
   outputs: CircuitPin[]
   nodes: CircuitNode[]

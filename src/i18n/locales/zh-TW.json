@@ -104,6 +104,11 @@
     "subtitle": "管理內建與自訂組合邏輯電路",
     "name": "名稱",
     "description": "描述",
+    "group": "分組",
+    "groupDefault": "預設",
+    "groupCustom": "自訂…",
+    "groupCustomPlaceholder": "輸入自訂分組名稱",
+    "groupHint": "優先選擇預設分組（便於多語系）；也可自訂",
     "type": "類型",
     "builtin": "內建",
     "custom": "自訂",
@@ -153,11 +158,13 @@
     "copyAsCustom": "複製為自訂",
     "simError": "模擬錯誤：{{message}}",
     "canvasHint": "點擊輸入接腳切換電平；雙擊封裝塊查看內部；Delete 刪除選取",
+    "drillBack": "返回上層",
+    "drillHint": "正在查看內部結構；可返回上層或點「設計」回到頂層",
     "category": {
       "adder": "加法器",
       "encoder": "編碼器",
       "decoder": "解碼器",
-      "ttl": "74LS"
+      "ttl": "74LS系列"
     },
     "modules": {
       "half_adder": "半加器",
