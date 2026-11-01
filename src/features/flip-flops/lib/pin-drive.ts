@@ -7,7 +7,8 @@ export function inferPinDrive(name: string): PinDrive {
   const n = name.trim().toUpperCase()
   if (n === 'VCC' || n === 'VDD') return 'vcc'
   if (n === 'GND' || n === 'VSS') return 'gnd'
-  if (n === 'CLK' || n === 'EN' || n.endsWith('CLK')) return 'clk'
+  // EN / enable is a level signal, not a clock (timing diagram toggles all clk drives).
+  if (n === 'CLK' || n.endsWith('CLK')) return 'clk'
   return 'signal'
 }
 

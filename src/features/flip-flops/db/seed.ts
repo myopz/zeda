@@ -17,7 +17,7 @@ import {
 } from '../types'
 
 /** Bump when seed layout / IO changes so IndexedDB seeds re-apply. */
-export const FF_LAYOUT_REV = 11
+export const FF_LAYOUT_REV = 12
 
 const FF_IDS: Record<FfModuleKey, string> = {
   rs_basic_nor: snowflake.fixed(201),

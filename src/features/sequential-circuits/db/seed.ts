@@ -16,7 +16,7 @@ import {
 } from '../types'
 
 /** Bump when seed layout / IO changes so IndexedDB seeds re-apply. */
-export const SEQ_LAYOUT_REV = 4
+export const SEQ_LAYOUT_REV = 5
 
 /** Seeded as editable custom circuits (not read-only builtins). */
 export const CUSTOM_SEED_KEYS = new Set<SeqModuleKey>([
