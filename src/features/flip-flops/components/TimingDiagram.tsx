@@ -1,10 +1,17 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { TimingWave } from '@/components/timing-wave'
 import { Button } from '@/components/ui/button'
 import type { LogicGate } from '@/features/logic-gates/types'
 import { cn } from '@/lib/utils'
 import type { Bit, FlipFlopCircuit } from '../types'
+import {
+  applyFixedInputDrives,
+  defaultBitForPin,
+  isClockDrive,
+  isFixedDrive,
+  resolvePinDrive,
+} from '../lib/pin-drive'
 import {
   createInitialSimState,
   evaluateSequential,
@@ -36,25 +43,30 @@ function resolveGateFactory(gates: LogicGate[]): GateResolver {
 function defaultSlot(circuit: FlipFlopCircuit): Record<string, Bit> {
   const slot: Record<string, Bit> = {}
   for (const p of circuit.inputs) {
-    // Active-low async default high
-    slot[p.id] = p.name.includes('nPRE') || p.name.includes('nCLR') ? 1 : 0
+    slot[p.id] = defaultBitForPin(p)
   }
-  return slot
+  return applyFixedInputDrives(circuit.inputs, slot)
 }
 
-/** Build a simple clocked stimulus: alternate CLK, hold other inputs from base. */
-function buildClockStimulus(
+/**
+ * Build stimulus from pin drives:
+ * - clk: alternate 0/1 each half-cycle
+ * - vcc / gnd: constant 1 / 0
+ * - signal: hold base level
+ */
+function buildDriveStimulus(
   circuit: FlipFlopCircuit,
   base: Record<string, Bit>,
   cycles: number,
 ): Record<string, Bit>[] {
-  const clkPin = circuit.inputs.find(
-    (p) => p.name === 'CLK' || p.name.endsWith('CLK') || p.name === 'EN',
-  )
+  const clkPins = circuit.inputs.filter((p) => isClockDrive(resolvePinDrive(p)))
   const slots: Record<string, Bit>[] = []
   for (let i = 0; i < cycles * 2 && slots.length < MAX_SLOTS; i += 1) {
-    const slot = { ...base }
-    if (clkPin) slot[clkPin.id] = (i % 2 === 0 ? 0 : 1) as Bit
+    const slot = applyFixedInputDrives(circuit.inputs, { ...base })
+    const phase = (i % 2 === 0 ? 0 : 1) as Bit
+    for (const clk of clkPins) {
+      slot[clk.id] = phase
+    }
     slots.push(slot)
   }
   return slots
@@ -65,11 +77,15 @@ export function TimingDiagram({ circuit, gates, className }: Props) {
   const [cycles, setCycles] = useState(8)
   const [base, setBase] = useState(() => defaultSlot(circuit))
 
+  useEffect(() => {
+    setBase(defaultSlot(circuit))
+  }, [circuit.id, circuit.inputs])
+
   const resolveGate = useMemo(() => resolveGateFactory(gates), [gates])
 
   const result = useMemo(() => {
     try {
-      const slots = buildClockStimulus(circuit, base, cycles)
+      const slots = buildDriveStimulus(circuit, base, cycles)
       let sim = createInitialSimState(circuit)
       const samples: { inputs: Record<string, Bit>; outputs: Record<string, Bit> }[] =
         []
@@ -113,8 +129,18 @@ export function TimingDiagram({ circuit, gates, className }: Props) {
   }, [result, circuit])
 
   const toggleBase = (pinId: string) => {
-    setBase((prev) => ({ ...prev, [pinId]: prev[pinId] === 1 ? 0 : 1 }))
+    setBase((prev) =>
+      applyFixedInputDrives(circuit.inputs, {
+        ...prev,
+        [pinId]: prev[pinId] === 1 ? 0 : 1,
+      }),
+    )
   }
+
+  const stimPins = circuit.inputs.filter((p) => {
+    const d = resolvePinDrive(p)
+    return !isClockDrive(d) && !isFixedDrive(d)
+  })
 
   return (
     <div className={cn('flex flex-col gap-3', className)}>
@@ -143,13 +169,12 @@ export function TimingDiagram({ circuit, gates, className }: Props) {
         </Button>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <span className="text-xs text-muted-foreground">
-          {t('flipflops.timingBaseInputs')}
-        </span>
-        {circuit.inputs
-          .filter((p) => p.name !== 'CLK' && !p.name.endsWith('CLK') && p.name !== 'EN')
-          .map((p) => (
+      {stimPins.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          <span className="text-xs text-muted-foreground">
+            {t('flipflops.timingBaseInputs')}
+          </span>
+          {stimPins.map((p) => (
             <Button
               key={p.id}
               type="button"
@@ -161,7 +186,8 @@ export function TimingDiagram({ circuit, gates, className }: Props) {
               {p.name}={base[p.id] ?? 0}
             </Button>
           ))}
-      </div>
+        </div>
+      ) : null}
 
       {!result.ok ? (
         <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">

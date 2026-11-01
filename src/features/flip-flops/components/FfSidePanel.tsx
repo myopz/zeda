@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { LogicGate } from '@/features/logic-gates/types'
 import { cn } from '@/lib/utils'
-import type { FlipFlopCircuit } from '../types'
+import type { FlipFlopCircuit, PinDrive } from '../types'
 import { FfMetaPanel } from './FfMetaPanel'
 import { FfModulePalette } from './FfModulePalette'
 
@@ -23,9 +23,11 @@ type Props = {
   collapsed?: boolean
   onCollapsedChange?: (collapsed: boolean) => void
   onChange: (next: FlipFlopCircuit) => void
-  onInputCountChange: (count: number) => void
-  onOutputCountChange: (count: number) => void
+  onAddPin: (kind: 'in' | 'out') => void
+  onRemovePin: (kind: 'in' | 'out', pinId: string) => void
+  onMovePin: (kind: 'in' | 'out', pinId: string, dir: -1 | 1) => void
   onRenamePin: (kind: 'in' | 'out', pinId: string, name: string) => void
+  onSetPinDrive: (pinId: string, drive: PinDrive) => void
   className?: string
 }
 
@@ -47,9 +49,11 @@ export function FfSidePanel({
   collapsed = false,
   onCollapsedChange,
   onChange,
-  onInputCountChange,
-  onOutputCountChange,
+  onAddPin,
+  onRemovePin,
+  onMovePin,
   onRenamePin,
+  onSetPinDrive,
   className,
 }: Props) {
   const { t } = useTranslation()
@@ -114,9 +118,11 @@ export function FfSidePanel({
           readOnly={readOnly}
           embedded
           onChange={onChange}
-          onInputCountChange={onInputCountChange}
-          onOutputCountChange={onOutputCountChange}
+          onAddPin={onAddPin}
+          onRemovePin={onRemovePin}
+          onMovePin={onMovePin}
           onRenamePin={onRenamePin}
+          onSetPinDrive={onSetPinDrive}
           className="h-full"
         />
       </TabsContent>

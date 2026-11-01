@@ -1,4 +1,5 @@
 import { compareSnowflakeId, createId } from '@/lib/utils'
+import { normalizeCircuitPin } from '../lib/pin-drive'
 import {
   DEFAULT_FF_GROUP,
   type FlipFlopExportPayload,
@@ -17,8 +18,11 @@ export function normalizeFlipFlop(raw: FlipFlopCircuit): FlipFlopCircuit {
     description: raw.description ?? '',
     group,
     behaviorKey: raw.behaviorKey,
-    inputs: raw.inputs ?? [],
-    outputs: raw.outputs ?? [],
+    inputs: (raw.inputs ?? []).map(normalizeCircuitPin),
+    outputs: (raw.outputs ?? []).map((p) => ({
+      id: p.id,
+      name: typeof p.name === 'string' && p.name.trim() ? p.name.trim() : 'X',
+    })),
     nodes: raw.nodes ?? [],
     wires: raw.wires ?? [],
   }

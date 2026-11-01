@@ -1,8 +1,16 @@
 export type Bit = 0 | 1
 
+/**
+ * Input drive semantics for timing / simulation stimulus.
+ * Outputs ignore this field. Missing values are inferred from {@link CircuitPin.name}.
+ */
+export type PinDrive = 'signal' | 'clk' | 'vcc' | 'gnd'
+
 export type CircuitPin = {
   id: string
   name: string
+  /** Input stimulus role; defaults via name inference when omitted. */
+  drive?: PinDrive
 }
 
 export type GateNodeRef = {

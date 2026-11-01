@@ -20,6 +20,7 @@ import type { LogicGate } from '@/features/logic-gates/types'
 import { createId, cn } from '@/lib/utils'
 import { hasFfInternals } from '../lib/internals'
 import { getFfModule } from '../lib/ff-modules'
+import { isFixedDrive, resolvePinDrive } from '../lib/pin-drive'
 import { endpointKey } from '../lib/seq-sim'
 import type {
   Bit,
@@ -232,6 +233,16 @@ function buildFlowGraph(
 
   circuit.inputs.forEach((pin, i) => {
     const bit = endpointBits?.[endpointKey({ nodeId: 'io', pinId: pin.id })]
+    const drive = resolvePinDrive(pin)
+    const fixed = isFixedDrive(drive)
+    const driveLabel =
+      drive === 'clk'
+        ? 'CLK'
+        : drive === 'vcc'
+          ? 'VCC'
+          : drive === 'gnd'
+            ? 'GND'
+            : 'IN'
     nodes.push({
       id: ioFlowId(pin.id),
       type: 'circuitIo',
@@ -243,7 +254,9 @@ function buildFlowGraph(
         label: pin.name,
         pinId: pin.id,
         bit,
-        onToggle: onToggleInput ? () => onToggleInput(pin.id) : undefined,
+        driveLabel,
+        onToggle:
+          !fixed && onToggleInput ? () => onToggleInput(pin.id) : undefined,
       } satisfies IoNodeData,
       draggable: true,
     })

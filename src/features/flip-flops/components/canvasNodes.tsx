@@ -12,6 +12,8 @@ export type IoNodeData = {
   label: string
   pinId: string
   bit?: Bit
+  /** Shown under the pin name (e.g. CLK / VCC / GND). */
+  driveLabel?: string
   /** Click input pin to toggle simulation level */
   onToggle?: () => void
   highlight?: NodeHighlight
@@ -75,7 +77,11 @@ export function IoNode({ data }: NodeProps) {
     >
       <div className="font-mono font-medium">{d.label}</div>
       <div className="text-[10px] text-muted-foreground">
-        {isIn ? 'IN' : 'OUT'}
+        {d.driveLabel
+          ? d.driveLabel
+          : isIn
+            ? 'IN'
+            : 'OUT'}
         {d.bit !== undefined ? ` · ${d.bit}` : ''}
       </div>
       {isIn ? (

@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react'
+import { Binary, ChevronDown, ChevronUp, Clock, Plus, Trash2 } from 'lucide-react'
+import { useMemo, useState, type SVGProps } from 'react'
 import { useTranslation } from 'react-i18next'
-import { DraftNumberInput } from '@/components/ui/draft-number-input'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -19,10 +20,12 @@ import {
   PRESET_FF_GROUPS,
   sortFfGroups,
 } from '../lib/groups'
+import { PIN_DRIVES, resolvePinDrive } from '../lib/pin-drive'
 import {
   DEFAULT_FF_GROUP,
   type CircuitPin,
   type FlipFlopCircuit,
+  type PinDrive,
 } from '../types'
 
 const CUSTOM_SENTINEL = '__custom__'
@@ -35,10 +38,193 @@ type Props = {
   /** Content-only mode for tab host (no chrome / collapse) */
   embedded?: boolean
   onChange: (next: FlipFlopCircuit) => void
-  onInputCountChange: (count: number) => void
-  onOutputCountChange: (count: number) => void
+  onAddPin: (kind: 'in' | 'out') => void
+  onRemovePin: (kind: 'in' | 'out', pinId: string) => void
+  onMovePin: (kind: 'in' | 'out', pinId: string, dir: -1 | 1) => void
   onRenamePin: (kind: 'in' | 'out', pinId: string, name: string) => void
+  onSetPinDrive: (pinId: string, drive: PinDrive) => void
   className?: string
+}
+
+const DRIVE_ABBR: Record<PinDrive, string> = {
+  signal: 'DATA',
+  clk: 'CLK',
+  vcc: 'VCC',
+  gnd: 'GND',
+}
+
+function driveToneClass(drive: PinDrive) {
+  if (drive === 'clk') return 'text-amber-600 dark:text-amber-400'
+  if (drive === 'vcc') return 'text-rose-600 dark:text-rose-400'
+  if (drive === 'gnd') return 'text-sky-600 dark:text-sky-400'
+  return 'text-muted-foreground'
+}
+
+/** IEC / schematic VCC (power rail): bar + vertical stem. */
+function VccSymbol({ className, ...props }: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+      {...props}
+    >
+      <path d="M3 3.5h10" />
+      <path d="M8 3.5v9" />
+    </svg>
+  )
+}
+
+/** IEC / schematic earth ground: three descending bars. */
+function GndSymbol({ className, ...props }: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+      {...props}
+    >
+      <path d="M8 2.5v5" />
+      <path d="M3 7.5h10" />
+      <path d="M4.5 10h7" />
+      <path d="M6 12.5h4" />
+    </svg>
+  )
+}
+
+function DriveGlyph({
+  drive,
+  className,
+}: {
+  drive: PinDrive
+  className?: string
+}) {
+  if (drive === 'vcc') return <VccSymbol className={className} />
+  if (drive === 'gnd') return <GndSymbol className={className} />
+  if (drive === 'clk') return <Clock className={className} aria-hidden />
+  return <Binary className={className} aria-hidden />
+}
+
+function PinRow({
+  pin,
+  index,
+  total,
+  readOnly,
+  showDrive,
+  onRename,
+  onDrive,
+  onMove,
+  onRemove,
+}: {
+  pin: CircuitPin
+  index: number
+  total: number
+  readOnly?: boolean
+  showDrive?: boolean
+  onRename: (name: string) => void
+  onDrive?: (drive: PinDrive) => void
+  onMove: (dir: -1 | 1) => void
+  onRemove: () => void
+}) {
+  const { t } = useTranslation()
+  const drive = resolvePinDrive(pin)
+
+  return (
+    <div className="flex items-center gap-0.5">
+      <div className="flex shrink-0 flex-col">
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="size-5"
+          disabled={readOnly || index === 0}
+          aria-label={t('flipflops.pinMoveUp')}
+          onClick={() => onMove(-1)}
+        >
+          <ChevronUp className="size-3" />
+        </Button>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="size-5"
+          disabled={readOnly || index >= total - 1}
+          aria-label={t('flipflops.pinMoveDown')}
+          onClick={() => onMove(1)}
+        >
+          <ChevronDown className="size-3" />
+        </Button>
+      </div>
+      <Input
+        value={pin.name}
+        disabled={readOnly}
+        className="h-7 min-w-0 flex-1 px-2 font-mono text-xs"
+        onChange={(e) => onRename(e.target.value)}
+      />
+      {showDrive ? (
+        <Select
+          value={drive}
+          disabled={readOnly}
+          onValueChange={(v) => onDrive?.(v as PinDrive)}
+        >
+          <SelectTrigger
+            className={cn(
+              'size-7 shrink-0 justify-center gap-0 px-0 [&>svg:last-child]:hidden',
+              driveToneClass(drive),
+            )}
+            aria-label={t(`flipflops.pinDrive.${drive}`)}
+            title={`${DRIVE_ABBR[drive]} · ${t(`flipflops.pinDrive.${drive}`)}`}
+          >
+            <DriveGlyph drive={drive} className="size-3.5" />
+          </SelectTrigger>
+          <SelectContent className="min-w-[12rem]">
+            {PIN_DRIVES.map((d) => (
+              <SelectItem key={d} value={d}>
+                <span className="inline-flex items-center gap-2 text-xs">
+                  <DriveGlyph
+                    drive={d}
+                    className={cn('size-3.5 shrink-0', driveToneClass(d))}
+                  />
+                  <span
+                    className={cn(
+                      'w-9 font-mono font-semibold',
+                      driveToneClass(d),
+                    )}
+                  >
+                    {DRIVE_ABBR[d]}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {t(`flipflops.pinDrive.${d}`)}
+                  </span>
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : null}
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="size-7 shrink-0 text-muted-foreground hover:text-destructive"
+        disabled={readOnly}
+        aria-label={t('flipflops.pinRemove')}
+        onClick={onRemove}
+      >
+        <Trash2 className="size-3.5" />
+      </Button>
+    </div>
+  )
 }
 
 export function FfMetaPanel({
@@ -47,9 +233,11 @@ export function FfMetaPanel({
   readOnly,
   embedded,
   onChange,
-  onInputCountChange,
-  onOutputCountChange,
+  onAddPin,
+  onRemovePin,
+  onMovePin,
   onRenamePin,
+  onSetPinDrive,
   className,
 }: Props) {
   const { t } = useTranslation()
@@ -184,47 +372,74 @@ export function FfMetaPanel({
 
         <div className="space-y-3">
           <div className="text-sm font-medium">{t('flipflops.pins')}</div>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1.5">
-              <Label>{t('flipflops.inputCount')}</Label>
-              <DraftNumberInput
-                value={circuit.inputs.length}
-                disabled={readOnly}
-                onCommit={onInputCountChange}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>{t('flipflops.outputCount')}</Label>
-              <DraftNumberInput
-                value={circuit.outputs.length}
-                disabled={readOnly}
-                onCommit={onOutputCountChange}
-              />
-            </div>
-          </div>
+          <p className="text-[11px] text-muted-foreground">{t('flipflops.pinDriveHint')}</p>
+
           <div className="space-y-2">
-            <div className="text-xs text-muted-foreground">{t('flipflops.inputs')}</div>
-            {circuit.inputs.map((pin: CircuitPin) => (
-              <Input
-                key={pin.id}
-                value={pin.name}
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs text-muted-foreground">{t('flipflops.inputs')}</div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 gap-1 px-2 text-xs"
                 disabled={readOnly}
-                className="font-mono"
-                onChange={(e) => onRenamePin('in', pin.id, e.target.value)}
-              />
-            ))}
+                onClick={() => onAddPin('in')}
+              >
+                <Plus className="size-3.5" />
+                {t('flipflops.pinAdd')}
+              </Button>
+            </div>
+            {circuit.inputs.length === 0 ? (
+              <p className="text-[11px] text-muted-foreground">{t('flipflops.pinEmpty')}</p>
+            ) : (
+              circuit.inputs.map((pin, i) => (
+                <PinRow
+                  key={pin.id}
+                  pin={pin}
+                  index={i}
+                  total={circuit.inputs.length}
+                  readOnly={readOnly}
+                  showDrive
+                  onRename={(name) => onRenamePin('in', pin.id, name)}
+                  onDrive={(drive) => onSetPinDrive(pin.id, drive)}
+                  onMove={(dir) => onMovePin('in', pin.id, dir)}
+                  onRemove={() => onRemovePin('in', pin.id)}
+                />
+              ))
+            )}
           </div>
+
           <div className="space-y-2">
-            <div className="text-xs text-muted-foreground">{t('flipflops.outputs')}</div>
-            {circuit.outputs.map((pin: CircuitPin) => (
-              <Input
-                key={pin.id}
-                value={pin.name}
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs text-muted-foreground">{t('flipflops.outputs')}</div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 gap-1 px-2 text-xs"
                 disabled={readOnly}
-                className="font-mono"
-                onChange={(e) => onRenamePin('out', pin.id, e.target.value)}
-              />
-            ))}
+                onClick={() => onAddPin('out')}
+              >
+                <Plus className="size-3.5" />
+                {t('flipflops.pinAdd')}
+              </Button>
+            </div>
+            {circuit.outputs.length === 0 ? (
+              <p className="text-[11px] text-muted-foreground">{t('flipflops.pinEmpty')}</p>
+            ) : (
+              circuit.outputs.map((pin, i) => (
+                <PinRow
+                  key={pin.id}
+                  pin={pin}
+                  index={i}
+                  total={circuit.outputs.length}
+                  readOnly={readOnly}
+                  onRename={(name) => onRenamePin('out', pin.id, name)}
+                  onMove={(dir) => onMovePin('out', pin.id, dir)}
+                  onRemove={() => onRemovePin('out', pin.id)}
+                />
+              ))
+            )}
           </div>
         </div>
       </div>

@@ -33,13 +33,20 @@ import {
 import { catalogKeyFromFfId } from '../db/seed'
 import { buildFfInternals } from '../lib/internals'
 import {
+  applyFixedInputDrives,
+  defaultBitForPin,
+  defaultNameForDrive,
+  isFixedDrive,
+  resolvePinDrive,
+} from '../lib/pin-drive'
+import {
   createInitialSimState,
   evaluateSequential,
   SeqSimError,
   type FfSimState,
   type GateResolver,
 } from '../lib/seq-sim'
-import type { Bit, CircuitPin, FlipFlopCircuit } from '../types'
+import type { Bit, CircuitPin, FlipFlopCircuit, PinDrive } from '../types'
 
 type Draft = FlipFlopCircuit
 
@@ -51,20 +58,36 @@ type DrillFrame = {
 
 const SIDE_COLLAPSE_KEY = 'zeda.flipflops.sideCollapsed'
 
-function resizePins(count: number, kind: 'in' | 'out', prev: CircuitPin[]): CircuitPin[] {
-  const next: CircuitPin[] = []
-  for (let i = 0; i < count; i += 1) {
-    next.push(prev[i] ?? { id: createId('pin'), name: defaultPinName(i, kind) })
+function defaultInputs(circuit: FlipFlopCircuit): Record<string, Bit> {
+  const next: Record<string, Bit> = {}
+  for (const p of circuit.inputs) {
+    next[p.id] = defaultBitForPin(p)
   }
   return next
 }
 
-function defaultInputs(circuit: FlipFlopCircuit): Record<string, Bit> {
-  const next: Record<string, Bit> = {}
-  for (const p of circuit.inputs) {
-    next[p.id] = p.name.includes('nPRE') || p.name.includes('nCLR') ? 1 : 0
-  }
+function movePinInList(
+  pins: CircuitPin[],
+  pinId: string,
+  dir: -1 | 1,
+): CircuitPin[] {
+  const i = pins.findIndex((p) => p.id === pinId)
+  if (i < 0) return pins
+  const j = i + dir
+  if (j < 0 || j >= pins.length) return pins
+  const next = [...pins]
+  const tmp = next[i]!
+  next[i] = next[j]!
+  next[j] = tmp
   return next
+}
+
+function dropIoWires(wires: FlipFlopCircuit['wires'], pinId: string) {
+  return wires.filter(
+    (w) =>
+      !(w.from.nodeId === 'io' && w.from.pinId === pinId) &&
+      !(w.to.nodeId === 'io' && w.to.pinId === pinId),
+  )
 }
 
 function readCollapsed(key: string, fallbackNarrow: boolean): boolean {
@@ -198,7 +221,8 @@ export function FlipFlopDetailPage() {
         return state
       }
       try {
-        const result = evaluateSequential(viewing, inputs, state, resolveGate)
+        const forced = applyFixedInputDrives(viewing.inputs, inputs)
+        const result = evaluateSequential(viewing, forced, state, resolveGate)
         setEvalSnapshot({
           ok: true,
           skip: false,
@@ -315,42 +339,84 @@ export function FlipFlopDetailPage() {
 
   const onToggleInput = useCallback(
     (pinId: string) => {
+      const pin = viewing?.inputs.find((p) => p.id === pinId)
+      if (pin && isFixedDrive(resolvePinDrive(pin))) return
       setSimInputs((prev) => {
-        const next: Record<string, Bit> = {
+        const flipped: Record<string, Bit> = {
           ...prev,
           [pinId]: prev[pinId] === 1 ? 0 : 1,
         }
+        const next = viewing
+          ? applyFixedInputDrives(viewing.inputs, flipped)
+          : flipped
         setSimState((state) => runSim(next, state))
         return next
       })
     },
-    [runSim],
+    [runSim, viewing],
   )
 
-  const onInputCountChange = (count: number) => {
-    if (!rootCircuit || readOnly || !Number.isFinite(count)) return
-    const n = Math.max(1, Math.trunc(count))
-    const inputs = resizePins(n, 'in', rootCircuit.inputs)
-    const keep = new Set(inputs.map((p) => p.id))
-    const wires = rootCircuit.wires.filter(
-      (w) =>
-        !(w.from.nodeId === 'io' && !keep.has(w.from.pinId)) &&
-        !(w.to.nodeId === 'io' && !keep.has(w.to.pinId)),
-    )
-    commit({ ...rootCircuit, inputs, wires, updatedAt: Date.now() })
+  const onAddPin = (kind: 'in' | 'out') => {
+    if (!rootCircuit || readOnly) return
+    if (kind === 'in') {
+      const name = defaultNameForDrive('signal', rootCircuit.inputs.length)
+      const pin: CircuitPin = {
+        id: createId('pin'),
+        name,
+        drive: 'signal',
+      }
+      commit({
+        ...rootCircuit,
+        inputs: [...rootCircuit.inputs, pin],
+        updatedAt: Date.now(),
+      })
+    } else {
+      const pin: CircuitPin = {
+        id: createId('pin'),
+        name: defaultPinName(rootCircuit.outputs.length, 'out'),
+      }
+      commit({
+        ...rootCircuit,
+        outputs: [...rootCircuit.outputs, pin],
+        updatedAt: Date.now(),
+      })
+    }
   }
 
-  const onOutputCountChange = (count: number) => {
-    if (!rootCircuit || readOnly || !Number.isFinite(count)) return
-    const n = Math.max(1, Math.trunc(count))
-    const outputs = resizePins(n, 'out', rootCircuit.outputs)
-    const keep = new Set(outputs.map((p) => p.id))
-    const wires = rootCircuit.wires.filter(
-      (w) =>
-        !(w.from.nodeId === 'io' && !keep.has(w.from.pinId)) &&
-        !(w.to.nodeId === 'io' && !keep.has(w.to.pinId)),
-    )
-    commit({ ...rootCircuit, outputs, wires, updatedAt: Date.now() })
+  const onRemovePin = (kind: 'in' | 'out', pinId: string) => {
+    if (!rootCircuit || readOnly) return
+    if (kind === 'in') {
+      commit({
+        ...rootCircuit,
+        inputs: rootCircuit.inputs.filter((p) => p.id !== pinId),
+        wires: dropIoWires(rootCircuit.wires, pinId),
+        updatedAt: Date.now(),
+      })
+    } else {
+      commit({
+        ...rootCircuit,
+        outputs: rootCircuit.outputs.filter((p) => p.id !== pinId),
+        wires: dropIoWires(rootCircuit.wires, pinId),
+        updatedAt: Date.now(),
+      })
+    }
+  }
+
+  const onMovePin = (kind: 'in' | 'out', pinId: string, dir: -1 | 1) => {
+    if (!rootCircuit || readOnly) return
+    if (kind === 'in') {
+      commit({
+        ...rootCircuit,
+        inputs: movePinInList(rootCircuit.inputs, pinId, dir),
+        updatedAt: Date.now(),
+      })
+    } else {
+      commit({
+        ...rootCircuit,
+        outputs: movePinInList(rootCircuit.outputs, pinId, dir),
+        updatedAt: Date.now(),
+      })
+    }
   }
 
   const onRenamePin = (kind: 'in' | 'out', pinId: string, name: string) => {
@@ -367,6 +433,14 @@ export function FlipFlopDetailPage() {
       )
       commit({ ...rootCircuit, outputs, updatedAt: Date.now() })
     }
+  }
+
+  const onSetPinDrive = (pinId: string, drive: PinDrive) => {
+    if (!rootCircuit || readOnly) return
+    const inputs = rootCircuit.inputs.map((p) =>
+      p.id === pinId ? { ...p, drive } : p,
+    )
+    commit({ ...rootCircuit, inputs, updatedAt: Date.now() })
   }
 
   const onSave = async () => {
@@ -535,9 +609,11 @@ export function FlipFlopDetailPage() {
               collapsed={sideCollapsed}
               onCollapsedChange={onSideCollapsedChange}
               onChange={commit}
-              onInputCountChange={onInputCountChange}
-              onOutputCountChange={onOutputCountChange}
+              onAddPin={onAddPin}
+              onRemovePin={onRemovePin}
+              onMovePin={onMovePin}
               onRenamePin={onRenamePin}
+              onSetPinDrive={onSetPinDrive}
               className="h-full"
             />
           </div>

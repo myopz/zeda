@@ -7,6 +7,7 @@ import {
   type GateLevelFfKey,
 } from '../lib/internals'
 import { FF_MODULE_KEYS, getFfModule, type FfModuleKey } from '../lib/ff-modules'
+import { inferPinDrive } from '../lib/pin-drive'
 import {
   DEFAULT_FF_GROUP,
   type CircuitWire,
@@ -16,7 +17,7 @@ import {
 } from '../types'
 
 /** Bump when seed layout / IO changes so IndexedDB seeds re-apply. */
-export const FF_LAYOUT_REV = 8
+export const FF_LAYOUT_REV = 9
 
 const FF_IDS: Record<FfModuleKey, string> = {
   rs_basic_nor: snowflake.fixed(201),
@@ -81,7 +82,7 @@ function buildGateLevelCircuit(key: GateLevelFfKey): FlipFlopCircuit {
   const inputs = view.inputs.map((p) => {
     const id = `ff:${key}:in:${p.name}`
     pinMap.set(p.id, id)
-    return { id, name: p.name }
+    return { id, name: p.name, drive: inferPinDrive(p.name) }
   })
   const outputs = view.outputs.map((p) => {
     const id = `ff:${key}:out:${p.name}`
@@ -123,6 +124,7 @@ function buildBlackBoxCircuit(key: FfModuleKey): FlipFlopCircuit {
   const inputs = mod.inputs.map((p) => ({
     id: `ff:${key}:in:${p.name}`,
     name: p.name,
+    drive: inferPinDrive(p.name),
   }))
   const outputs = mod.outputs.map((p) => ({
     id: `ff:${key}:out:${p.name}`,
@@ -200,8 +202,8 @@ export function createBlankCustomFlipFlop(name: string): FlipFlopCircuit {
     kind: 'custom',
     group: DEFAULT_FF_GROUP,
     inputs: [
-      { id: createId('pin'), name: 'D' },
-      { id: createId('pin'), name: 'CLK' },
+      { id: createId('pin'), name: 'D', drive: 'signal' },
+      { id: createId('pin'), name: 'CLK', drive: 'clk' },
     ],
     outputs: [
       { id: createId('pin'), name: 'Q' },
