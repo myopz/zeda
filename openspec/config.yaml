@@ -1,0 +1,25 @@
+# OpenSpec project config (spec-driven schema)
+schema: spec-driven
+
+context: |
+  zeda 是纯前端数字逻辑学习/仿真 SPA。base 固定 /zeda/。
+  北星：教学用简易 CPU + 简单汇编装载/运行（可下钻）。路线图 docs/roadmap.md。
+  已交付：app-shell、logic-gates、combo-circuits、flip-flops、sequential-circuits。
+  阶段任务全文：docs/task/step1|step2/task0N.md；Cursor 计划：.cursor/plans/。
+  openspec/specs 为可验收行为真相；细节种子/冒烟与 task 对齐，冲突以代码 + specs 为准。
+  四特性独立 Dexie；组合用 netlist，时序用 seq-sim；CPU/汇编须新 feature。
+  Agent：AGENTS.md；架构：docs/architecture.md。
+
+rules:
+  proposal:
+    - 用中文写清 why / scope / 非目标；说明相对北星的增益
+    - 74xx 只列代表件；禁止整系列、完整现代 ISA、流水线全家桶等不可验收膨胀
+    - 大范围阶段可对照 docs/task 结构写验收表，再压成 delta Requirement
+  specs:
+    - Requirement 用 SHALL；Scenario 用 WHEN/THEN；失败路径必须可见
+    - 冻结种子表、时钟语义、嵌套规则必须写进 spec 或 design，勿只留在聊天里
+  design:
+    - 写清权威数据、Dexie 库名、仿真内核边界、复用/禁止复用、关键路径
+    - CPU 相关须独立切片；指令语义不得进入 combo netlist
+  tasks:
+    - 分组编号；实现时勾选；覆盖 build/冒烟与无回归；可引用 task 冒烟清单
