@@ -6,7 +6,7 @@ import {
   Save,
   Undo2,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useLocation, useNavigate, useParams } from 'react-router'
 import { Badge } from '@/components/ui/badge'
@@ -208,8 +208,10 @@ export function SequentialDetailPage() {
   const history = useHistoryState<Draft | null>(null)
 
   const [drillStack, setDrillStack] = useState<DrillFrame[]>([])
-  const [, setSimInputs] = useState<Record<string, Bit>>({})
+  const [simInputs, setSimInputs] = useState<Record<string, Bit>>({})
   const [, setSimState] = useState<FfSimState>({ ffState: {}, prevClk: {} })
+  const simInputsRef = useRef(simInputs)
+  simInputsRef.current = simInputs
   const [sideCollapsed, setSideCollapsed] = useState(() =>
     readCollapsed(SIDE_COLLAPSE_KEY, true),
   )
@@ -345,10 +347,10 @@ export function SequentialDetailPage() {
     const resolveCircuit = (cid: string) =>
       allCircuits.find((c) => c.id === cid)
     const initial = createInitialSeqSimState(viewing, resolveCircuit)
-    setSimState(initial)
-    setSimInputs(defaultInputs(viewing))
-    // Defer sim until inputs state commits — run with defaults immediately.
-    runSim(defaultInputs(viewing), initial)
+    const inputs = defaultInputs(viewing)
+    setSimInputs(inputs)
+    // Keep React sim state in sync with the first eval (prevClk / held Q).
+    setSimState(runSim(inputs, initial))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewing?.id, inDrill])
 
@@ -549,15 +551,13 @@ export function SequentialDetailPage() {
   const onToggleOutputState = useCallback(
     (pinId: string) => {
       if (!viewing || inDrill) return
-      setSimInputs((inputs) => {
-        const forced = applyFixedInputDrives(viewing.inputs, inputs)
-        setSimState((state) => {
-          const nextState = togglePresentStateOnOutput(viewing, state, pinId)
-          if (!nextState) return state
-          // Re-settle outputs from new present state (hold if no clock edge).
-          return runSim(forced, nextState)
-        })
-        return inputs
+      // Do not nest setSimState inside setSimInputs — returning the same inputs
+      // reference bails out and can drop the nested update (现态 click no-ops).
+      const forced = applyFixedInputDrives(viewing.inputs, simInputsRef.current)
+      setSimState((state) => {
+        const nextState = togglePresentStateOnOutput(viewing, state, pinId)
+        if (!nextState) return state
+        return runSim(forced, nextState)
       })
     },
     [viewing, inDrill, runSim],

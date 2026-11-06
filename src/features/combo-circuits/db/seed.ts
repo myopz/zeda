@@ -11,7 +11,7 @@ import {
 } from '../types'
 
 /** Bump when gate-level layout spacing changes so IndexedDB seeds re-apply. */
-export const CIRCUIT_LAYOUT_REV = 8
+export const CIRCUIT_LAYOUT_REV = 11
 
 const CIRCUIT_IDS: Record<ModuleKey, string> = {
   half_adder: snowflake.fixed(101),
@@ -21,6 +21,11 @@ const CIRCUIT_IDS: Record<ModuleKey, string> = {
   decoder_2_4: snowflake.fixed(105),
   decoder_3_8: snowflake.fixed(106),
   seven_seg_decoder: snowflake.fixed(107),
+  mux_2_1_8: snowflake.fixed(111),
+  mux_4_1_8: snowflake.fixed(112),
+  demux_1_2_8: snowflake.fixed(113),
+  alu_8: snowflake.fixed(114),
+  cmp_8: snowflake.fixed(115),
   '74ls138': snowflake.fixed(108),
   '74ls148': snowflake.fixed(109),
   '74ls283': snowflake.fixed(110),
@@ -42,6 +47,11 @@ const DISPLAY_NAMES: Record<ModuleKey, string> = {
   decoder_2_4: '2→4 Binary Decoder',
   decoder_3_8: '3→8 Binary Decoder',
   seven_seg_decoder: 'Seven-Segment Decoder (CC)',
+  mux_2_1_8: '8-bit 2:1 Mux',
+  mux_4_1_8: '8-bit 4:1 Mux',
+  demux_1_2_8: '8-bit 1:2 Demux',
+  alu_8: '8-bit ALU',
+  cmp_8: '8-bit Comparator',
   '74ls138': '74LS138',
   '74ls148': '74LS148',
   '74ls283': '74LS283',
@@ -55,6 +65,11 @@ const DESCRIPTIONS: Record<ModuleKey, string> = {
   decoder_2_4: 'Gate-level NOT + AND decoder',
   decoder_3_8: 'Gate-level 3–8 AND decoder',
   seven_seg_decoder: 'Gate-level hex SOP → a–g (common cathode)',
+  mux_2_1_8: 'Select A or B bus (S)',
+  mux_4_1_8: 'Select one of four 8-bit inputs',
+  demux_1_2_8: 'Route D to Y0 or Y1 (S)',
+  alu_8: 'ADD/SUB/AND/OR/XOR/NOT + Z/C flags',
+  cmp_8: 'EQ / GT / LT flags',
   '74ls138': 'Enable + decoder_3_8 + active-low Y',
   '74ls148': 'Active-low wrap around priority encoder',
   '74ls283': '4× full adder modules',
@@ -68,6 +83,11 @@ const GROUPS: Record<ModuleKey, ModuleCategory> = {
   decoder_2_4: 'decoder',
   decoder_3_8: 'decoder',
   seven_seg_decoder: 'decoder',
+  mux_2_1_8: 'datapath',
+  mux_4_1_8: 'datapath',
+  demux_1_2_8: 'datapath',
+  alu_8: 'datapath',
+  cmp_8: 'datapath',
   '74ls138': 'ttl',
   '74ls148': 'ttl',
   '74ls283': 'ttl',

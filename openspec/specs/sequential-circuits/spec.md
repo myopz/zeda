@@ -2,7 +2,7 @@
 
 ## Purpose
 
-时序逻辑电路（寄存器 / 计数器 / 代表 74LS）管理：画布设计、层次复用触发器模块、理想时钟仿真与分析视图；下钻至门级。触发器 `/ff` 保持独立实体与 schema。为简易 CPU 的寄存器堆、PC、移位/计数子系统提供 MSI 地基。
+时序逻辑电路（寄存器 / 计数器 / **存储器教具** / 代表 74LS）管理：画布设计、层次复用触发器模块、理想时钟仿真与分析视图；下钻至门级或行为壳。触发器 `/ff` 保持独立实体与 schema。为简易 CPU 提供 MSI 与小容量存储教具；**完整 256 字 CPU 内存在 `cpu` feature**。
 
 **溯源**：[`docs/task/step2/task04.md`](../../../docs/task/step2/task04.md)、`.cursor/plans/时序电路管理_*.plan.md`。代码：`src/features/sequential-circuits/`。
 
@@ -64,8 +64,17 @@ SHALL 继承 flip-flops：理想边沿、异步优先。SHALL NOT：传输延迟
 | builtinKey | 要点 | 层次 |
 |------------|------|------|
 | `reg_4` | D0–D3,CLK,nLOAD,nCLR → Q0–Q3 | 4×`d_edge`+门 |
+| `reg_8` | 8 位并行 load/clear | 行为壳 |
 | `shift_reg_4_left` | SI,CLK → Q0–Q3 | `d_edge` 链 |
 | `shift_reg_4_right` | 右移镜像 | 同上 |
+
+#### Memory (teaching-scale)
+
+| builtinKey | 要点 |
+|------------|------|
+| `regfile_8x8` | 双口读 / ↑CLK&WE 写；WA/RA/RB |
+| `ram_16x8` | 同步写（↑CLK&nWE=0）；nOE 读 |
+| `rom_16x8` | 教学固定查表（非可编程）；`ROM[i]=(i<<4)\|(~i&0xF)` |
 
 #### Counters
 
@@ -96,10 +105,10 @@ SHALL 继承 flip-flops：理想边沿、异步优先。SHALL NOT：传输延迟
 
 ## Open / deferred
 
-- 任意模 N 向导、FSM 专用编辑器、完整 74 系列、下钻内仿真、波形仪增强、单测  
-- ALU / 简易 CPU / 汇编 → roadmap P5–P9，**新 feature**，不膨胀本库  
+- 任意模 N 向导、FSM 专用编辑器、完整 74 系列、下钻内仿真、波形仪增强、单测
+- 256×8 RAM 画布教具（CPU 侧已有运行时内存）— 按需另起 change
 
 ## Verification (smoke)
 
-- `pnpm build` / lint  
-- `/seq`；各 builtin 只读与下钻到门；同步进位；异步纹波；mod-6/十进制回绕；移位；74ls161/90/194；嵌套另一 seq；导入导出；三语；**`/ff` 无回归**；必要时 bump `SEQ_LAYOUT_REV`  
+- `pnpm build` / lint
+- `/seq`；各 builtin 只读与下钻；`reg_8`/regfile/ram_16x8/rom_16x8；同步进位；异步纹波；mod-6/十进制回绕；移位；74ls161/90/194；嵌套另一 seq；导入导出；三语；**`/ff` 无回归**；`SEQ_LAYOUT_REV`

@@ -8,6 +8,7 @@
 | `/clc`、`/clc/:id` | combo-circuits | `nav.comboCircuits` |
 | `/ff`、`/ff/:id` | flip-flops | `nav.flipFlops` |
 | `/seq`、`/seq/:id` | sequential-circuits | `nav.sequential` |
+| `/cpu`、`/cpu/:id` | cpu | `nav.cpu` |
 
 - Router 注册于 `src/app/router.tsx`  
 - 未知路径 → `/lgc`  
@@ -21,9 +22,10 @@
 | `zeda.combo-circuits` | `circuits` | `ComboCircuit` |
 | `zeda.flip-flops` | `circuits` | `FlipFlopCircuit` |
 | `zeda.sequential-circuits` | `circuits` | `SequentialCircuit` |
+| `zeda.cpu` | `programs` | `CpuProgram` |
 
 - `kind: 'builtin' | 'custom'`；builtin 禁改删  
-- 种子重写靠 revision：`GATE_META_REV` / `CIRCUIT_LAYOUT_REV` / `FF_LAYOUT_REV` / `SEQ_LAYOUT_REV`  
+- 种子重写靠 revision：`GATE_META_REV` / `CIRCUIT_LAYOUT_REV` / `FF_LAYOUT_REV` / `SEQ_LAYOUT_REV` / `CPU_LAYOUT_REV`  
 - 种子 id 使用 Snowflake `fixed(...)`，跨版本稳定  
 
 ## localStorage 键

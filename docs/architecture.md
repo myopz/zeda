@@ -15,16 +15,19 @@ flowchart TB
   Shell --> Clc["combo-circuits"]
   Shell --> Ff["flip-flops"]
   Shell --> Seq["sequential-circuits"]
+  Shell --> Cpu["cpu"]
   Lgc --> IDB1["Dexie zeda.logic-gates"]
   Clc --> IDB2["Dexie zeda.combo-circuits"]
   Ff --> IDB3["Dexie zeda.flip-flops"]
   Seq --> IDB4["Dexie zeda.sequential-circuits"]
+  Cpu --> IDB5["Dexie zeda.cpu"]
   Clc --> Bool["bool-engine"]
   Ff --> SeqSim["seq-sim"]
   Seq --> SeqSim
   SeqSim --> Bool
   Clc --> Netlist["netlist evaluate"]
   Netlist --> Bool
+  Cpu --> CpuRt["cpu-runtime + assembler"]
 ```
 
 ## 源码分层
@@ -81,7 +84,7 @@ flowchart TB
 - `BrowserRouter basename="/zeda"`  
 - Vite `base: '/zeda/'`  
 - 主题：`next-themes`；语言：localStorage 记忆  
-- 侧栏四入口：逻辑门 / 组合电路 / 触发器 / 时序电路  
+- 侧栏五入口：逻辑门 / 组合电路 / 触发器 / 时序电路 / 简易 CPU  
 
 ## 部署
 
@@ -95,8 +98,8 @@ flowchart TB
 
 北星与阶段划分见 [roadmap.md](./roadmap.md)。架构层约束：
 
-- **简易 CPU、汇编工具链、程序运行 UX** → 新建独立 `src/features/*` 切片（独立路由 / Dexie / i18n），**禁止**继续膨胀 `sequential-circuits` 成「万能时序袋」  
-- CPU 周期推进：建立在 `seq-sim` 或其上的 CPU 运行时；**禁止**把指令语义塞进 combo `netlist.ts`  
-- 通路积木（ALU/MUX 等）优先以可复用模块 + internals 下钻进入既有 combo/seq 目录，再被 CPU 引用  
+- **简易 CPU、汇编工具链** → 已落地 `src/features/cpu/`（`/cpu`、`zeda.cpu`）；**禁止**把 CPU 再塞回 `sequential-circuits`  
+- CPU 周期推进：`cpu-runtime`（多周期硬布线）；**禁止**把指令语义塞进 combo `netlist.ts`  
+- 通路积木（ALU/MUX 等）与 memory 教具已进入 combo/seq；整机运行时内存为 256×8（CPU 内）  
 - 热点求值 WASM 化（布尔 / 大网表 / 长波形 / CPU 步进）时，保持 JS 侧 API 与「权威数据」不变  
 - 云同步若引入，应作为仓储适配层，而不是改掉领域模型  

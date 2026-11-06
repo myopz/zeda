@@ -3,16 +3,17 @@
 数字逻辑电路学习与仿真平台：纯前端、本地 IndexedDB 持久化。
 
 **终极目标**：在浏览器内构建教学用**简易 CPU**，并用**简单汇编程序**装载、单步/运行（可下钻到门级与时序子系统）。  
-**当前进度**：门 → 组合 → 触发器 → 时序 MSI 主闭环已交付；通路积木、存储、控制、CPU 整机与汇编工具链见 [docs/roadmap.md](./docs/roadmap.md)。
+**当前进度**：门 → 组合（含通路积木）→ 触发器 → 时序（含 memory 教具）→ **Zeda-8 CPU + 汇编** 已交付。ISA：[docs/isa.md](./docs/isa.md)；路线图：[docs/roadmap.md](./docs/roadmap.md)。
 
 ## 功能一览
 
 | 模块 | 路由 | 说明 |
 |------|------|------|
 | 逻辑门 | `/zeda/lgc` | 公式权威、ANSI 符号、单门仿真、懒分页真值表 |
-| 组合电路 | `/zeda/clc` | 多门/模块连线、网表组合求值、加法器/编解码/74LS 代表件 |
+| 组合电路 | `/zeda/clc` | 多门/模块连线；加法器/编解码/MUX·ALU 等通路积木/74LS |
 | 触发器 | `/zeda/ff` | RS/JK/D/T/T′ 与 74LS 代表件；功能表 / 状态图 / 时序图 |
-| 时序电路 | `/zeda/seq` | 寄存器/计数器/74LS 代表件；层次复用 FF，可下钻到门 |
+| 时序电路 | `/zeda/seq` | 寄存器/计数器/RegFile·RAM·ROM 教具/74LS；可下钻 |
+| 简易 CPU | `/zeda/cpu` | Zeda-8 汇编装载、多周期单步/运行、寄存器与内存观察 |
 
 公共能力：亮/暗主题、简中 / 英文 / 繁中、导入导出 JSON、内置只读 +「复制为自定义」、undo/redo。
 
@@ -21,7 +22,7 @@
 - **构建**：pnpm + Vite + React 19 + TypeScript
 - **样式**：Tailwind CSS v4 + shadcn/ui（Radix）
 - **画布**：`@xyflow/react`
-- **存储**：Dexie（IndexedDB），四特性独立库名
+- **存储**：Dexie（IndexedDB），五特性独立库名
 - **i18n**：i18next / react-i18next
 - **部署**：Cloudflare Workers 静态资源（`wrangler`）
 
@@ -82,8 +83,8 @@ AGENTS.md
 
 | 状态 | 内容 |
 |------|------|
-| 已交付 | 逻辑门、组合电路、触发器、时序电路（寄存器/计数器等） |
-| 待实现（通往 CPU） | P5 通路积木（ALU/MUX/总线）→ P6 存储 → P7 控制单元 → P8 简易 CPU → P9 汇编器与程序运行 |
+| 已交付 | 逻辑门、组合（datapath）、触发器、时序（memory 教具）、Zeda-8 CPU + 汇编 |
+| 可选后续 | 门级下钻深化、调试增强、WASM；见 roadmap |
 | 待扩展（服务北星） | 表达式→网表、FSM 编辑器、关键 MSI 代表件、布局布线等 |
 | 默认延后 | 完整 74 系列、延时/STA/多时钟域、后端云同步、流水线/现代 ISA 全集；WASM 作后期性能项 |
 

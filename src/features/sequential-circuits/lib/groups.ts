@@ -4,6 +4,7 @@ export const PRESET_SEQ_GROUPS = [
   'flipflop',
   'register',
   'counter',
+  'memory',
   'ttl',
   DEFAULT_SEQ_GROUP,
 ] as const

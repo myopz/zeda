@@ -270,7 +270,8 @@ function buildFlowGraph(
         onToggle:
           !fixed && onToggleInput ? () => onToggleInput(pin.id) : undefined,
       } satisfies IoNodeData,
-      draggable: true,
+      // Auto-laid-out columns; keep non-draggable so click toggles aren't swallowed.
+      draggable: false,
     })
   })
 
@@ -282,6 +283,7 @@ function buildFlowGraph(
       position: { x: outX, y: IO_TOP + i * IO_ROW },
       zIndex: IO_Z,
       deletable: false,
+      draggable: false,
       data: {
         role: 'out',
         label: pin.name,
@@ -291,7 +293,6 @@ function buildFlowGraph(
           ? () => onToggleOutputState(pin.id)
           : undefined,
       } satisfies IoNodeData,
-      draggable: true,
     })
   })
 

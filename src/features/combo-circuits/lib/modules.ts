@@ -1,7 +1,12 @@
 import { evalFormula } from '@/features/logic-gates/lib/bool-engine'
 import type { Bit } from '../types'
 
-export type ModuleCategory = 'adder' | 'encoder' | 'decoder' | 'ttl'
+export type ModuleCategory =
+  | 'adder'
+  | 'encoder'
+  | 'decoder'
+  | 'datapath'
+  | 'ttl'
 
 export type ModulePin = {
   id: string
@@ -27,6 +32,11 @@ export const MODULE_KEYS = [
   'decoder_2_4',
   'decoder_3_8',
   'seven_seg_decoder',
+  'mux_2_1_8',
+  'mux_4_1_8',
+  'demux_1_2_8',
+  'alu_8',
+  'cmp_8',
   '74ls138',
   '74ls148',
   '74ls283',
@@ -44,6 +54,26 @@ function pins(moduleKey: string, names: string[], role: 'in' | 'out'): ModulePin
 
 function bit(v: boolean | number): Bit {
   return v ? 1 : 0
+}
+
+function readBus(bits: Record<string, Bit>, prefix: string, width: number): number {
+  let n = 0
+  for (let i = 0; i < width; i += 1) {
+    if (bits[`${prefix}${i}`]) n |= 1 << i
+  }
+  return n
+}
+
+function writeBus(n: number, prefix: string, width: number): Record<string, Bit> {
+  const out: Record<string, Bit> = {}
+  for (let i = 0; i < width; i += 1) {
+    out[`${prefix}${i}`] = bit((n >> i) & 1)
+  }
+  return out
+}
+
+function busNames(prefix: string, width: number): string[] {
+  return Array.from({ length: width }, (_, i) => `${prefix}${i}`)
 }
 
 /** Common-cathode 7-seg patterns for hex 0–F (a–g high = lit). */
@@ -235,6 +265,115 @@ export const MODULES: Record<ModuleKey, ModuleDef> = {
         S2: bit((sum >> 2) & 1),
         S3: bit((sum >> 3) & 1),
         Cout: bit((sum >> 4) & 1),
+      }
+    },
+  },
+
+  // —— Datapath blocks (evaluate authoritative; hierarchical internals for drill) ——
+  mux_2_1_8: {
+    key: 'mux_2_1_8',
+    category: 'datapath',
+    inputs: pins('mux_2_1_8', [...busNames('A', 8), ...busNames('B', 8), 'S'], 'in'),
+    outputs: pins('mux_2_1_8', busNames('Y', 8), 'out'),
+    evaluate: (bits) => {
+      const n = bits.S ? readBus(bits, 'B', 8) : readBus(bits, 'A', 8)
+      return writeBus(n, 'Y', 8)
+    },
+  },
+
+  mux_4_1_8: {
+    key: 'mux_4_1_8',
+    category: 'datapath',
+    inputs: pins('mux_4_1_8', [
+      ...busNames('I0_', 8),
+      ...busNames('I1_', 8),
+      ...busNames('I2_', 8),
+      ...busNames('I3_', 8),
+      'S1',
+      'S0',
+    ], 'in'),
+    outputs: pins('mux_4_1_8', busNames('Y', 8), 'out'),
+    evaluate: (bits) => {
+      const sel = ((bits.S1 ?? 0) << 1) | (bits.S0 ?? 0)
+      const n = readBus(bits, `I${sel}_`, 8)
+      return writeBus(n, 'Y', 8)
+    },
+  },
+
+  demux_1_2_8: {
+    key: 'demux_1_2_8',
+    category: 'datapath',
+    inputs: pins('demux_1_2_8', [...busNames('D', 8), 'S'], 'in'),
+    outputs: pins('demux_1_2_8', [...busNames('Y0_', 8), ...busNames('Y1_', 8)], 'out'),
+    evaluate: (bits) => {
+      const n = readBus(bits, 'D', 8)
+      if (bits.S) {
+        return { ...writeBus(0, 'Y0_', 8), ...writeBus(n, 'Y1_', 8) }
+      }
+      return { ...writeBus(n, 'Y0_', 8), ...writeBus(0, 'Y1_', 8) }
+    },
+  },
+
+  /** OP: 000 ADD, 001 SUB, 010 AND, 011 OR, 100 XOR, 101 NOT A, 110 pass A, 111 pass B */
+  alu_8: {
+    key: 'alu_8',
+    category: 'datapath',
+    inputs: pins('alu_8', [...busNames('A', 8), ...busNames('B', 8), 'OP2', 'OP1', 'OP0'], 'in'),
+    outputs: pins('alu_8', [...busNames('Y', 8), 'Z', 'C'], 'out'),
+    evaluate: (bits) => {
+      const a = readBus(bits, 'A', 8)
+      const b = readBus(bits, 'B', 8)
+      const op = ((bits.OP2 ?? 0) << 2) | ((bits.OP1 ?? 0) << 1) | (bits.OP0 ?? 0)
+      let y = 0
+      let c = 0
+      switch (op) {
+        case 0: {
+          const sum = a + b
+          y = sum & 0xff
+          c = sum > 0xff ? 1 : 0
+          break
+        }
+        case 1: {
+          const diff = a - b
+          y = diff & 0xff
+          c = a < b ? 1 : 0
+          break
+        }
+        case 2:
+          y = a & b
+          break
+        case 3:
+          y = a | b
+          break
+        case 4:
+          y = a ^ b
+          break
+        case 5:
+          y = (~a) & 0xff
+          break
+        case 6:
+          y = a
+          break
+        default:
+          y = b
+          break
+      }
+      return { ...writeBus(y, 'Y', 8), Z: bit(y === 0), C: bit(c) }
+    },
+  },
+
+  cmp_8: {
+    key: 'cmp_8',
+    category: 'datapath',
+    inputs: pins('cmp_8', [...busNames('A', 8), ...busNames('B', 8)], 'in'),
+    outputs: pins('cmp_8', ['EQ', 'GT', 'LT'], 'out'),
+    evaluate: (bits) => {
+      const a = readBus(bits, 'A', 8)
+      const b = readBus(bits, 'B', 8)
+      return {
+        EQ: bit(a === b),
+        GT: bit(a > b),
+        LT: bit(a < b),
       }
     },
   },

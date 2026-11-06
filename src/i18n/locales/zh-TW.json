@@ -10,7 +10,8 @@
     "collapse": "收合側欄",
     "expand": "展開側欄",
     "flipFlops": "觸發器",
-    "sequential": "時序電路"
+    "sequential": "時序電路",
+    "cpu": "簡易 CPU"
   },
   "theme": {
     "label": "主題",
@@ -186,7 +187,8 @@
       "adder": "加法器",
       "encoder": "編碼器",
       "decoder": "解碼器",
-      "ttl": "74LS系列"
+      "ttl": "74LS系列",
+      "datapath": "資料通路"
     },
     "modules": {
       "half_adder": "半加器",
@@ -198,7 +200,12 @@
       "seven_seg_decoder": "七段解碼器（共陰）",
       "74ls138": "74LS138",
       "74ls148": "74LS148",
-      "74ls283": "74LS283"
+      "74ls283": "74LS283",
+      "mux_2_1_8": "8位 2選1 多工器",
+      "mux_4_1_8": "8位 4選1 多工器",
+      "demux_1_2_8": "8位 1到2 分配器",
+      "alu_8": "8位 ALU",
+      "cmp_8": "8位比較器"
     }
   },
   "flipflops": {
@@ -385,7 +392,8 @@
       "flipflop": "觸發器",
       "register": "寄存器",
       "counter": "計數器",
-      "ttl": "74LS系列"
+      "ttl": "74LS系列",
+      "memory": "記憶體"
     },
     "modules": {
       "reg_4": "4位數碼寄存器",
@@ -399,9 +407,78 @@
       "counter_mod6_sync": "同步模6計數器",
       "74ls161": "74LS161",
       "74ls90": "74LS90",
-      "74ls194": "74LS194"
+      "74ls194": "74LS194",
+      "reg_8": "8位數碼寄存器",
+      "regfile_8x8": "8×8 寄存器堆",
+      "ram_16x8": "16×8 同步 RAM",
+      "rom_16x8": "16×8 教學 ROM（固定查表）"
     },
     "paletteFlipFlops": "觸發器",
     "paletteCircuits": "其它時序電路"
+  },
+  "cpu": {
+    "title": "簡易 CPU",
+    "subtitle": "Zeda-8 教學 CPU：組譯、裝載、單步與執行",
+    "name": "名稱",
+    "description": "描述",
+    "builtin": "內建",
+    "custom": "自訂",
+    "create": "新建程式",
+    "deleteConfirm": "確定刪除「{{name}}」？此操作不可撤銷。",
+    "builtinReadonly": "內建程式僅可檢視；可複製為自訂後編輯",
+    "copyAsCustom": "複製為自訂",
+    "copySuffix": "（副本）",
+    "saved": "已儲存",
+    "copied": "已複製",
+    "listView": "列表",
+    "cardView": "卡片",
+    "pageSize": "每頁",
+    "page": "第 {{page}} / {{total}} 頁",
+    "total": "共 {{count}} 條",
+    "updatedAt": "更新時間",
+    "detail": "CPU 程式",
+    "asm": "組合語言",
+    "asmPlaceholder": "# Zeda-8 assembly\nLOADI R0, 1\nHALT\n",
+    "assemble": "組譯",
+    "load": "裝載到記憶體",
+    "reset": "重設",
+    "step": "單步",
+    "run": "執行",
+    "stop": "停止",
+    "registers": "寄存器",
+    "flags": "標誌",
+    "memory": "記憶體",
+    "control": "控制",
+    "pc": "PC",
+    "ir": "IR",
+    "phase": "階段",
+    "halted": "已停機",
+    "running": "執行中",
+    "asmError": "組譯錯誤：{{message}}",
+    "runtimeError": "執行錯誤：{{message}}",
+    "assembledOk": "組譯完成 {{bytes}} 位元組",
+    "loadedOk": "已裝載於 0x{{addr}}",
+    "examples": "範例",
+    "newProgramName": "自訂程式",
+    "source": "原始碼",
+    "machineCode": "機器碼",
+    "noMachineCode": "請先組譯",
+    "tabCircuit": "電路",
+    "tabAsm": "組譯",
+    "datapathHint": "教學通路（16×8）。高亮為活動匯流排；⇅ 可下鑽模組內部。",
+    "blockControl": "控制",
+    "blockPc": "PC",
+    "blockMem": "RAM 16×8",
+    "blockIr": "IR",
+    "blockImm": "IMM",
+    "blockRf": "RegFile 8×8",
+    "blockAlu": "ALU",
+    "blockFlags": "標誌 Z/C",
+    "blockWb": "寫回選擇",
+    "drillBack": "返回",
+    "drillPath": "下鑽",
+    "loadTeachingError": "教學裝載失敗：{{message}}",
+    "compareRuntime": "與行為 runtime 對照",
+    "compareMismatch": "通路/runtime 不一致：{{message}}"
   }
 }

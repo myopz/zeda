@@ -17,11 +17,12 @@
 |------|------------|------|
 | 壳层 | `app-shell` | 已交付 |
 | 门 | `logic-gates` | 已交付 |
-| 组合 | `combo-circuits` | 已交付 |
+| 组合 | `combo-circuits` | 已交付（含 P5 datapath） |
 | 触发器 | `flip-flops` | 已交付 |
-| 时序 MSI | `sequential-circuits` | 已交付 |
+| 时序 MSI | `sequential-circuits` | 已交付（含 P5 `reg_8` + P6 memory 教具） |
+| 简易 CPU | `cpu` | 已交付（P7–P9：控制 + 整机 + 汇编） |
 
-以上构成 CPU 的**器件与子系统地基**；尚缺：运算与通路积木、存储模型、控制单元、ISA/汇编工具链、CPU 整机与程序运行 UX。
+P5–P9 主闭环已落地；ISA 见 [`docs/isa.md`](./isa.md)。后续为下钻深化 / 调试增强，非阻塞北星验收。
 
 ## 通往 CPU 的阶段规划
 
@@ -115,6 +116,6 @@ flowchart LR
 
 ## 下一步建议
 
-1. 开 change **`add-datapath-blocks`**（或先写短 proposal 冻结 ALU 位宽与积木清单）  
-2. 并行起草 **迷你 ISA 一页纸**（可放在未来 `add-simple-cpu` / `add-asm-toolchain` 的 proposal 附录），避免 P5–P7 积木与指令集错位  
-3. 不把「完整器件库」当主路径；只补 CPU 路径上缺的代表模块  
+1. 深化 ALU/MUX 门级 internals 与 CPU 画布下钻（可选 change）  
+2. 调试增强：断点、反汇编视图、波形联动（可选）  
+3. 不把「完整器件库」当主路径；只补教学路径上缺的代表模块  

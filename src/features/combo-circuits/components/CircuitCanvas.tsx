@@ -251,7 +251,7 @@ function buildFlowGraph(
         bit,
         onToggle: onToggleInput ? () => onToggleInput(pin.id) : undefined,
       } satisfies IoNodeData,
-      draggable: true,
+      draggable: false,
     })
   })
 
@@ -263,13 +263,13 @@ function buildFlowGraph(
       position: { x: outX, y: IO_TOP + i * IO_ROW },
       zIndex: IO_Z,
       deletable: false,
+      draggable: false,
       data: {
         role: 'out',
         label: pin.name,
         pinId: pin.id,
         bit,
       } satisfies IoNodeData,
-      draggable: true,
     })
   })
 

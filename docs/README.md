@@ -8,7 +8,8 @@
 
 | 路径 | 内容 |
 |------|------|
-| [roadmap.md](./roadmap.md) | 北星（简易 CPU + 汇编）、P5–P9、待扩展与延后 |
+| [roadmap.md](./roadmap.md) | 北星（简易 CPU + 汇编）、P5–P9 状态、待扩展与延后 |
+| [isa.md](./isa.md) | Zeda-8 迷你 ISA 一页纸 |
 | [architecture.md](./architecture.md) | 整体架构、特性边界、仿真分层、部署 |
 | [conventions.md](./conventions.md) | 路由、存储、i18n、种子、导出、UX 约定 |
 | [task/README.md](./task/README.md) | 阶段 task01–04 全文索引 |

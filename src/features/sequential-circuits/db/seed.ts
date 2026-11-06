@@ -16,7 +16,7 @@ import {
 } from '../types'
 
 /** Bump when seed layout / IO changes so IndexedDB seeds re-apply. */
-export const SEQ_LAYOUT_REV = 5
+export const SEQ_LAYOUT_REV = 10
 
 /** Seeded as editable custom circuits (not read-only builtins). */
 export const CUSTOM_SEED_KEYS = new Set<SeqModuleKey>([
@@ -27,6 +27,7 @@ export const CUSTOM_SEED_KEYS = new Set<SeqModuleKey>([
 
 const SEQ_IDS: Record<SeqModuleKey, string> = {
   reg_4: snowflake.fixed(301),
+  reg_8: snowflake.fixed(313),
   shift_reg_4_left: snowflake.fixed(302),
   shift_reg_4_right: snowflake.fixed(303),
   counter_bin_sync_4: snowflake.fixed(304),
@@ -35,6 +36,9 @@ const SEQ_IDS: Record<SeqModuleKey, string> = {
   counter_dec_sync: snowflake.fixed(307),
   counter_dec_async: snowflake.fixed(308),
   counter_mod6_sync: snowflake.fixed(309),
+  regfile_8x8: snowflake.fixed(314),
+  ram_16x8: snowflake.fixed(315),
+  rom_16x8: snowflake.fixed(316),
   '74ls161': snowflake.fixed(310),
   '74ls90': snowflake.fixed(311),
   '74ls194': snowflake.fixed(312),
@@ -44,6 +48,7 @@ export const LEGACY_SEQ_IDS = [] as const
 
 const DISPLAY_NAMES: Record<SeqModuleKey, string> = {
   reg_4: '4-bit Register',
+  reg_8: '8-bit Register',
   shift_reg_4_left: '4-bit Shift Register (Left)',
   shift_reg_4_right: '4-bit Shift Register (Right)',
   counter_bin_sync_4: '4-bit Sync Binary Counter',
@@ -52,6 +57,9 @@ const DISPLAY_NAMES: Record<SeqModuleKey, string> = {
   counter_dec_sync: 'Sync Decade Counter',
   counter_dec_async: 'Async Decade Counter',
   counter_mod6_sync: 'Sync Mod-6 Counter',
+  regfile_8x8: '8×8 Register File',
+  ram_16x8: '16×8 Sync RAM',
+  rom_16x8: '16×8 Teaching ROM (fixed LUT)',
   '74ls161': '74LS161',
   '74ls90': '74LS90',
   '74ls194': '74LS194',
@@ -59,6 +67,7 @@ const DISPLAY_NAMES: Record<SeqModuleKey, string> = {
 
 const DESCRIPTIONS: Record<SeqModuleKey, string> = {
   reg_4: '4-bit parallel register with load / clear (4× edge D + mux)',
+  reg_8: '8-bit parallel register with load / clear (behavior)',
   shift_reg_4_left: 'Serial-in left shift, parallel out',
   shift_reg_4_right: 'Serial-in right shift, parallel out',
   counter_bin_sync_4: 'Synchronous binary up counter',
@@ -67,6 +76,10 @@ const DESCRIPTIONS: Record<SeqModuleKey, string> = {
   counter_dec_sync: 'Synchronous decade 0–9',
   counter_dec_async: 'Asynchronous decade 0–9',
   counter_mod6_sync: 'Synchronous modulo-6 (N-ary example)',
+  regfile_8x8: 'Dual-read / sync-write register file for Zeda-8',
+  ram_16x8: 'Ideal sync RAM; write on ↑CLK & nWE=0',
+  rom_16x8:
+    'Fixed lookup demo (not programmable): ROM[i]=(i<<4)|(~i&0xF); Q[7:4]=A, Q[3:0]=¬A',
   '74ls161': 'Sync 4-bit binary counter with load / RCO',
   '74ls90': 'Decade counter (teaching-simplified)',
   '74ls194': '4-bit bidirectional universal shift register',

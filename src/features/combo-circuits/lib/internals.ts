@@ -85,6 +85,16 @@ export function buildModuleInternals(
         return build74ls148(gates)
       case '74ls283':
         return build74ls283(gates)
+      case 'mux_2_1_8':
+        return buildMux218(gates)
+      case 'mux_4_1_8':
+        return buildMux418(gates)
+      case 'demux_1_2_8':
+        return buildDemux128(gates)
+      case 'alu_8':
+        return buildAlu8(gates)
+      case 'cmp_8':
+        return buildCmp8(gates)
       default:
         return null
     }
@@ -173,7 +183,7 @@ function fanout(b: Builder, from: WireEndpoint, tos: WireEndpoint[]) {
   for (const to of tos) connect(b, from, to)
 }
 
-/** Device card footprint used by layout (matches compact DeviceNode). */
+/** Device card footprint used by layout (matches DeviceNode in canvasNodes). */
 const GATE_W = 160
 const GATE_H = 72
 const MODULE_W = 180
@@ -185,8 +195,28 @@ const GAP_Y = 56
 const COL = GATE_W + GAP_X
 const ROW = GATE_H + GAP_Y
 
+/** Match DeviceNode: label+pad ≈ 22px; port strip = max(32, rows×20). */
+function cardHeight(inputCount: number, outputCount: number): number {
+  const rows = Math.max(inputCount, outputCount, 1)
+  return 22 + Math.max(32, rows * 20)
+}
+
 function nodeSize(n: CircuitNode): { w: number; h: number } {
-  return n.kind === 'module' ? { w: MODULE_W, h: MODULE_H } : { w: GATE_W, h: GATE_H }
+  if (n.kind === 'module') {
+    const mod = MODULES[n.moduleKey as ModuleKey]
+    if (mod) {
+      return {
+        w: MODULE_W,
+        h: cardHeight(mod.inputs.length, mod.outputs.length),
+      }
+    }
+    return { w: MODULE_W, h: MODULE_H }
+  }
+  if (n.kind === 'gate') {
+    // Typical 1–3 in / 1 out; keep compact gate footprint.
+    return { w: GATE_W, h: GATE_H }
+  }
+  return { w: MODULE_W, h: MODULE_H }
 }
 
 /**
@@ -703,4 +733,231 @@ function build74ls283(gates: LogicGate[]): ComboCircuit {
   }
   connect(b, carry, io(findPin(outputs, 'Cout')))
   return finish('74ls283', inputs, outputs, b, '4× full adder')
+}
+
+// —— mux_2_1_8: per-bit (A·S̄) + (B·S) ——
+function buildMux218(gates: LogicGate[]): ComboCircuit {
+  const key: ModuleKey = 'mux_2_1_8'
+  const { inputs, outputs } = ioPins(key)
+  const b = createBuilder(gates, 'mux21')
+  const s = io(findPin(inputs, 'S'))
+  const sInv = addGate(b, 'not', 0, -ROW, 's_inv')
+  connect(b, s, gIn(sInv.id, sInv.gate, 'A'))
+  for (let i = 0; i < 8; i += 1) {
+    const y = i * ROW
+    const andA = addGate(b, 'and', COL, y, `a${i}`)
+    const andB = addGate(b, 'and', COL, y + ROW * 0.35, `b${i}`)
+    const orY = addGate(b, 'or', 2 * COL, y, `y${i}`)
+    connect(b, gOut(sInv.id, sInv.gate, 'Y'), gIn(andA.id, andA.gate, 'A'))
+    connect(b, io(findPin(inputs, `A${i}`)), gIn(andA.id, andA.gate, 'B'))
+    connect(b, s, gIn(andB.id, andB.gate, 'A'))
+    connect(b, io(findPin(inputs, `B${i}`)), gIn(andB.id, andB.gate, 'B'))
+    connect(b, gOut(andA.id, andA.gate, 'Y'), gIn(orY.id, orY.gate, 'A'))
+    connect(b, gOut(andB.id, andB.gate, 'Y'), gIn(orY.id, orY.gate, 'B'))
+    connect(b, gOut(orY.id, orY.gate, 'Y'), io(findPin(outputs, `Y${i}`)))
+  }
+  return finish(key, inputs, outputs, b, '8× bit mux: Y=(A·¬S)+(B·S)')
+}
+
+// —— mux_4_1_8: tree of mux_2_1_8 ——
+function buildMux418(gates: LogicGate[]): ComboCircuit {
+  const key: ModuleKey = 'mux_4_1_8'
+  const { inputs, outputs } = ioPins(key)
+  const b = createBuilder(gates, 'mux41')
+  const muxKey: ModuleKey = 'mux_2_1_8'
+  const s0 = io(findPin(inputs, 'S0'))
+  const s1 = io(findPin(inputs, 'S1'))
+
+  const lo = addModule(b, muxKey, COL, 0, 'lo')
+  const hi = addModule(b, muxKey, COL, 8 * (MODULE_H + 12), 'hi')
+  const out = addModule(b, muxKey, 3 * COL, 4 * (MODULE_H + 12), 'out')
+
+  for (let i = 0; i < 8; i += 1) {
+    connect(b, io(findPin(inputs, `I0_${i}`)), mIn(lo, muxKey, `A${i}`))
+    connect(b, io(findPin(inputs, `I1_${i}`)), mIn(lo, muxKey, `B${i}`))
+    connect(b, io(findPin(inputs, `I2_${i}`)), mIn(hi, muxKey, `A${i}`))
+    connect(b, io(findPin(inputs, `I3_${i}`)), mIn(hi, muxKey, `B${i}`))
+    connect(b, mOut(lo, muxKey, `Y${i}`), mIn(out, muxKey, `A${i}`))
+    connect(b, mOut(hi, muxKey, `Y${i}`), mIn(out, muxKey, `B${i}`))
+    connect(b, mOut(out, muxKey, `Y${i}`), io(findPin(outputs, `Y${i}`)))
+  }
+  connect(b, s0, mIn(lo, muxKey, 'S'))
+  connect(b, s0, mIn(hi, muxKey, 'S'))
+  connect(b, s1, mIn(out, muxKey, 'S'))
+  return finish(key, inputs, outputs, b, '3× mux_2_1_8 tree (S0 then S1)')
+}
+
+// —— demux_1_2_8: Y0=D·¬S, Y1=D·S ——
+function buildDemux128(gates: LogicGate[]): ComboCircuit {
+  const key: ModuleKey = 'demux_1_2_8'
+  const { inputs, outputs } = ioPins(key)
+  const b = createBuilder(gates, 'demux12')
+  const s = io(findPin(inputs, 'S'))
+  const sInv = addGate(b, 'not', 0, -ROW, 's_inv')
+  connect(b, s, gIn(sInv.id, sInv.gate, 'A'))
+  for (let i = 0; i < 8; i += 1) {
+    const y = i * ROW
+    const and0 = addGate(b, 'and', COL, y, `y0_${i}`)
+    const and1 = addGate(b, 'and', COL, y + ROW * 0.35, `y1_${i}`)
+    connect(b, gOut(sInv.id, sInv.gate, 'Y'), gIn(and0.id, and0.gate, 'A'))
+    connect(b, io(findPin(inputs, `D${i}`)), gIn(and0.id, and0.gate, 'B'))
+    connect(b, s, gIn(and1.id, and1.gate, 'A'))
+    connect(b, io(findPin(inputs, `D${i}`)), gIn(and1.id, and1.gate, 'B'))
+    connect(b, gOut(and0.id, and0.gate, 'Y'), io(findPin(outputs, `Y0_${i}`)))
+    connect(b, gOut(and1.id, and1.gate, 'Y'), io(findPin(outputs, `Y1_${i}`)))
+  }
+  return finish(key, inputs, outputs, b, '8× bit demux: Y0=D·¬S, Y1=D·S')
+}
+
+// —— cmp_8: EQ from XOR/NOR; GT/LT MSB cascade ——
+function buildCmp8(gates: LogicGate[]): ComboCircuit {
+  const key: ModuleKey = 'cmp_8'
+  const { inputs, outputs } = ioPins(key)
+  const b = createBuilder(gates, 'cmp8')
+  const xors: { id: string; gate: LogicGate }[] = []
+  for (let i = 0; i < 8; i += 1) {
+    const x = addGate(b, 'xor', 0, i * ROW, `x${i}`)
+    connect(b, io(findPin(inputs, `A${i}`)), gIn(x.id, x.gate, 'A'))
+    connect(b, io(findPin(inputs, `B${i}`)), gIn(x.id, x.gate, 'B'))
+    xors.push(x)
+  }
+  // OR-reduce of XOR → NEQ, then NOT → EQ
+  let orAcc = xors[0]!
+  for (let i = 1; i < 8; i += 1) {
+    const o = addGate(b, 'or', COL + ((i - 1) % 2) * (GATE_W / 2), i * ROW, `or${i}`)
+    connect(b, gOut(orAcc.id, orAcc.gate, 'Y'), gIn(o.id, o.gate, 'A'))
+    connect(b, gOut(xors[i]!.id, xors[i]!.gate, 'Y'), gIn(o.id, o.gate, 'B'))
+    orAcc = o
+  }
+  const eqNot = addGate(b, 'not', 2.5 * COL, 2 * ROW, 'eq')
+  connect(b, gOut(orAcc.id, orAcc.gate, 'Y'), gIn(eqNot.id, eqNot.gate, 'A'))
+  connect(b, gOut(eqNot.id, eqNot.gate, 'Y'), io(findPin(outputs, 'EQ')))
+
+  // GT = A7·¬B7 ∨ (eq7 ∧ (A6·¬B6 ∨ (eq6 ∧ …)))  where eqi = ¬(Ai⊕Bi)
+  const eqBits: WireEndpoint[] = []
+  const aGtBits: WireEndpoint[] = []
+  for (let i = 0; i < 8; i += 1) {
+    const bInv = addGate(b, 'not', 3 * COL, (7 - i) * ROW, `nb${i}`)
+    connect(b, io(findPin(inputs, `B${i}`)), gIn(bInv.id, bInv.gate, 'A'))
+    const aGt = addGate(b, 'and', 4 * COL, (7 - i) * ROW, `agt${i}`)
+    connect(b, io(findPin(inputs, `A${i}`)), gIn(aGt.id, aGt.gate, 'A'))
+    connect(b, gOut(bInv.id, bInv.gate, 'Y'), gIn(aGt.id, aGt.gate, 'B'))
+    aGtBits.push(gOut(aGt.id, aGt.gate, 'Y'))
+    const eqBit = addGate(b, 'not', 3.5 * COL, (7 - i) * ROW + ROW * 0.35, `eqb${i}`)
+    connect(b, gOut(xors[i]!.id, xors[i]!.gate, 'Y'), gIn(eqBit.id, eqBit.gate, 'A'))
+    eqBits.push(gOut(eqBit.id, eqBit.gate, 'Y'))
+  }
+  let gtWire: WireEndpoint = aGtBits[7]!
+  let stillEq: WireEndpoint = eqBits[7]!
+  for (let i = 6; i >= 0; i -= 1) {
+    const andLower = addGate(b, 'and', 5 * COL, (7 - i) * ROW, `eqgt${i}`)
+    connect(b, stillEq, gIn(andLower.id, andLower.gate, 'A'))
+    connect(b, aGtBits[i]!, gIn(andLower.id, andLower.gate, 'B'))
+    const orGt = addGate(b, 'or', 6 * COL, (7 - i) * ROW, `orgt${i}`)
+    connect(b, gtWire, gIn(orGt.id, orGt.gate, 'A'))
+    connect(b, gOut(andLower.id, andLower.gate, 'Y'), gIn(orGt.id, orGt.gate, 'B'))
+    gtWire = gOut(orGt.id, orGt.gate, 'Y')
+    const andEq = addGate(b, 'and', 5.5 * COL, (7 - i) * ROW + ROW * 0.35, `stilleq${i}`)
+    connect(b, stillEq, gIn(andEq.id, andEq.gate, 'A'))
+    connect(b, eqBits[i]!, gIn(andEq.id, andEq.gate, 'B'))
+    stillEq = gOut(andEq.id, andEq.gate, 'Y')
+  }
+  connect(b, gtWire, io(findPin(outputs, 'GT')))
+
+  // LT = ¬EQ · ¬GT
+  const nGt = addGate(b, 'not', 7 * COL, ROW, 'ngt')
+  connect(b, gtWire!, gIn(nGt.id, nGt.gate, 'A'))
+  const nEq = addGate(b, 'not', 7.5 * COL, 2 * ROW, 'neq')
+  connect(b, gOut(eqNot.id, eqNot.gate, 'Y'), gIn(nEq.id, nEq.gate, 'A'))
+  const lt = addGate(b, 'and', 8 * COL, ROW, 'lt')
+  connect(b, gOut(nEq.id, nEq.gate, 'Y'), gIn(lt.id, lt.gate, 'A'))
+  connect(b, gOut(nGt.id, nGt.gate, 'Y'), gIn(lt.id, lt.gate, 'B'))
+  connect(b, gOut(lt.id, lt.gate, 'Y'), io(findPin(outputs, 'LT')))
+
+  return finish(key, inputs, outputs, b, 'XOR/NOR EQ + MSB cascade GT; LT=¬EQ·¬GT')
+}
+
+/**
+ * ALU teaching structure (evaluate() remains authoritative for all OP codes):
+ * 8× full_adder arith path + AND/OR/XOR banks + mux_4_1_8 result select + Z NOR-tree.
+ */
+function buildAlu8(gates: LogicGate[]): ComboCircuit {
+  const key: ModuleKey = 'alu_8'
+  const { inputs, outputs } = ioPins(key)
+  const b = createBuilder(gates, 'alu8')
+  const faKey: ModuleKey = 'full_adder'
+  const muxKey: ModuleKey = 'mux_4_1_8'
+
+  let carry: WireEndpoint = io(findPin(inputs, 'OP0')) // structural Cin stand-in for ADD
+  // Prefer Cin=0 for ADD visualization: tie via OP0 is wrong. Use a grounded Cin:
+  // Create Cin=0 by AND of a pin with its NOT (always 0).
+  const cinZeroA = addGate(b, 'not', -COL, -ROW, 'cin0_n')
+  connect(b, io(findPin(inputs, 'A0')), gIn(cinZeroA.id, cinZeroA.gate, 'A'))
+  const cinZero = addGate(b, 'and', -COL / 2, -ROW, 'cin0')
+  connect(b, io(findPin(inputs, 'A0')), gIn(cinZero.id, cinZero.gate, 'A'))
+  connect(b, gOut(cinZeroA.id, cinZeroA.gate, 'Y'), gIn(cinZero.id, cinZero.gate, 'B'))
+  carry = gOut(cinZero.id, cinZero.gate, 'Y')
+
+  const sumPins: WireEndpoint[] = []
+  for (let i = 0; i < 8; i += 1) {
+    const fa = addModule(b, faKey, 0, i * (MODULE_H + 8), `fa${i}`)
+    connect(b, io(findPin(inputs, `A${i}`)), mIn(fa, faKey, 'A'))
+    connect(b, io(findPin(inputs, `B${i}`)), mIn(fa, faKey, 'B'))
+    connect(b, carry, mIn(fa, faKey, 'Cin'))
+    sumPins.push(mOut(fa, faKey, 'Sum'))
+    carry = mOut(fa, faKey, 'Cout')
+  }
+  connect(b, carry, io(findPin(outputs, 'C')))
+
+  const andY: WireEndpoint[] = []
+  const orY: WireEndpoint[] = []
+  const xorY: WireEndpoint[] = []
+  for (let i = 0; i < 8; i += 1) {
+    const y = i * ROW
+    const andG = addGate(b, 'and', 2.5 * COL, y, `band${i}`)
+    connect(b, io(findPin(inputs, `A${i}`)), gIn(andG.id, andG.gate, 'A'))
+    connect(b, io(findPin(inputs, `B${i}`)), gIn(andG.id, andG.gate, 'B'))
+    andY.push(gOut(andG.id, andG.gate, 'Y'))
+
+    const orG = addGate(b, 'or', 3.5 * COL, y, `bor${i}`)
+    connect(b, io(findPin(inputs, `A${i}`)), gIn(orG.id, orG.gate, 'A'))
+    connect(b, io(findPin(inputs, `B${i}`)), gIn(orG.id, orG.gate, 'B'))
+    orY.push(gOut(orG.id, orG.gate, 'Y'))
+
+    const xorG = addGate(b, 'xor', 4.5 * COL, y, `bxor${i}`)
+    connect(b, io(findPin(inputs, `A${i}`)), gIn(xorG.id, xorG.gate, 'A'))
+    connect(b, io(findPin(inputs, `B${i}`)), gIn(xorG.id, xorG.gate, 'B'))
+    xorY.push(gOut(xorG.id, xorG.gate, 'Y'))
+  }
+
+  const mux = addModule(b, muxKey, 6 * COL, 2 * ROW, 'rmux')
+  for (let i = 0; i < 8; i += 1) {
+    connect(b, sumPins[i]!, mIn(mux, muxKey, `I0_${i}`))
+    connect(b, andY[i]!, mIn(mux, muxKey, `I1_${i}`))
+    connect(b, orY[i]!, mIn(mux, muxKey, `I2_${i}`))
+    connect(b, xorY[i]!, mIn(mux, muxKey, `I3_${i}`))
+    connect(b, mOut(mux, muxKey, `Y${i}`), io(findPin(outputs, `Y${i}`)))
+  }
+  connect(b, io(findPin(inputs, 'OP0')), mIn(mux, muxKey, 'S0'))
+  connect(b, io(findPin(inputs, 'OP1')), mIn(mux, muxKey, 'S1'))
+
+  // Z = NOR of Y (via OR-tree + NOT)
+  let zAcc: WireEndpoint = mOut(mux, muxKey, 'Y0')
+  for (let i = 1; i < 8; i += 1) {
+    const o = addGate(b, 'or', 8 * COL, i * (ROW / 2), `zor${i}`)
+    connect(b, zAcc, gIn(o.id, o.gate, 'A'))
+    connect(b, mOut(mux, muxKey, `Y${i}`), gIn(o.id, o.gate, 'B'))
+    zAcc = gOut(o.id, o.gate, 'Y')
+  }
+  const zNot = addGate(b, 'not', 9 * COL, ROW, 'z')
+  connect(b, zAcc, gIn(zNot.id, zNot.gate, 'A'))
+  connect(b, gOut(zNot.id, zNot.gate, 'Y'), io(findPin(outputs, 'Z')))
+
+  return finish(
+    key,
+    inputs,
+    outputs,
+    b,
+    '8× full_adder + AND/OR/XOR + mux_4_1_8 (OP1:0); evaluate() authoritative for full OP',
+  )
 }

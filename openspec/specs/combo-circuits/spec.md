@@ -2,7 +2,7 @@
 
 ## Purpose
 
-组合逻辑电路管理：列表、`@xyflow/react` 画布连线、网表级**纯组合**仿真；内置加法器/编解码/七段与代表性 74LS 模块；可下钻门级 internals。为后续 ALU/通路积木与简易 CPU 提供组合地基。
+组合逻辑电路管理：列表、`@xyflow/react` 画布连线、网表级**纯组合**仿真；内置加法器/编解码/七段、**数据通路积木**（MUX/DEMUX/ALU/比较器）与代表性 74LS 模块；可下钻门级或行为壳 internals。为简易 CPU 提供组合地基。
 
 **溯源**：[`docs/task/step1/task02.md`](../../../docs/task/step1/task02.md)。代码：`src/features/combo-circuits/`。
 
@@ -70,6 +70,16 @@
 | `decoder_3_8` | A2–A0 → Y0–Y7 |
 | `seven_seg_decoder` | D3–D0 → a–g；**共阴**高电平点亮 |
 
+#### Datapath (behavior-first shells)
+
+| builtinKey | 要点 |
+|------------|------|
+| `mux_2_1_8` | 8 位 2:1；`S` 选 A/B |
+| `mux_4_1_8` | 8 位 4:1；`S1 S0` |
+| `demux_1_2_8` | 8 位 1:2 |
+| `alu_8` | OP→ADD/SUB/AND/OR/XOR/NOT/pass；出 Y + Z/C |
+| `cmp_8` | EQ/GT/LT |
+
 #### 74LS representatives (not full family)
 
 | builtinKey | 要点 |
@@ -96,11 +106,11 @@
 须另起 change（服务北星者优先，见 roadmap）：
 
 - **布线优化**：自动分层布局、正交布线、交叉避让、IO 左右锚定、选中高亮与仿真色区分、一键整理（可 undo）  
-- **表达式 → 门级网表综合**（高杠杆，通向 ALU）  
+- **表达式 → 门级网表综合**；ALU/MUX 门级 internals 深化  
 - 缩略图、网表导出公式/真值表页、总线/探针、大画布虚拟化、导入版本演进  
 - 完整 74 系列、WASM、后端、PCB/模拟 — 默认不做  
 
 ## Verification (smoke)
 
 - `pnpm build`
-- 侧栏 `/clc`；分页/卡片/搜索；复制 builtin；拖门连线；翻转输入；环路报错；半加/全加/编解码/七段/74ls138·148·283 可开可下钻；导入导出；缺门引用失败；三语；小屏侧栏折叠  
+- 侧栏 `/clc`；分页/卡片/搜索；复制 builtin；拖门连线；翻转输入；环路报错；半加/全加/编解码/七段/datapath(MUX·ALU·CMP)/74ls138·148·283 可开；导入导出；缺门引用失败；三语；小屏侧栏折叠  

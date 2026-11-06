@@ -11,9 +11,10 @@
 已交付 capabilities：
 
 1. `app-shell` + `logic-gates` → `/lgc`
-2. `combo-circuits` → `/clc`
+2. `combo-circuits` → `/clc`（含通路积木）
 3. `flip-flops` → `/ff`
-4. `sequential-circuits` → `/seq`
+4. `sequential-circuits` → `/seq`（含 memory 教具）
+5. `cpu` → `/cpu`（Zeda-8 汇编装载/运行；ISA 见 `docs/isa.md`）
 
 首页重定向：`/zeda` → `/zeda/lgc`。不要擅自改默认落地页，除非 change 规格明确要求。
 
@@ -56,9 +57,9 @@ openspec/changes/<change>/proposal.md
 
 | 不变量 | 说明 |
 |--------|------|
-| 特性隔离存储 | 四库分离：`zeda.logic-gates` / `zeda.combo-circuits` / `zeda.flip-flops` / `zeda.sequential-circuits` |
+| 特性隔离存储 | 五库分离：`zeda.logic-gates` / `zeda.combo-circuits` / `zeda.flip-flops` / `zeda.sequential-circuits` / `zeda.cpu` |
 | 权威数据 | 门=公式；组合=网表；触发器/时序=网表 + 模块行为（`step`/方程）。不持久化全量真值表/波形 |
-| 仿真分层 | 组合用 `combo-circuits/lib/netlist.ts`；时序用 `flip-flops/lib/seq-sim.ts`（可注入模块解析）。**不要**用 combo 网表当时钟仿真内核 |
+| 仿真分层 | 组合用 `combo-circuits/lib/netlist.ts`；时序用 `flip-flops/lib/seq-sim.ts`；CPU 用 `cpu/lib/cpu-runtime.ts`。**不要**用 combo 网表当时钟/指令内核 |
 | 内置只读 | `kind: 'builtin'` 禁改删；允许「复制为自定义」 |
 | 符号 | 逻辑门 ANSI（`GateSymbol`） |
 | i18n | 改文案必须同步 `zh-CN` / `en` / `zh-TW` |

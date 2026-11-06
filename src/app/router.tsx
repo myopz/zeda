@@ -8,6 +8,8 @@ import { LogicGateDetailPage } from '@/features/logic-gates/pages/LogicGateDetai
 import { LogicGateListPage } from '@/features/logic-gates/pages/LogicGateListPage'
 import { SequentialDetailPage } from '@/features/sequential-circuits/pages/SequentialDetailPage'
 import { SequentialListPage } from '@/features/sequential-circuits/pages/SequentialListPage'
+import { CpuDetailPage } from '@/features/cpu/pages/CpuDetailPage'
+import { CpuListPage } from '@/features/cpu/pages/CpuListPage'
 
 export function AppRouter() {
   return (
@@ -23,6 +25,8 @@ export function AppRouter() {
           <Route path="ff/:id" element={<FlipFlopDetailPage />} />
           <Route path="seq" element={<SequentialListPage />} />
           <Route path="seq/:id" element={<SequentialDetailPage />} />
+          <Route path="cpu" element={<CpuListPage />} />
+          <Route path="cpu/:id" element={<CpuDetailPage />} />
           <Route path="*" element={<Navigate to="/lgc" replace />} />
         </Route>
       </Routes>

@@ -35,17 +35,19 @@ proposal → specs（delta）→ design → tasks → apply → archive → 合�
 | [combo-circuits](./specs/combo-circuits/spec.md) | `/clc` | [spec](./specs/combo-circuits/spec.md) · [design](./specs/combo-circuits/design.md) | [task02](../docs/task/step1/task02.md) |
 | [flip-flops](./specs/flip-flops/spec.md) | `/ff` | [spec](./specs/flip-flops/spec.md) · [design](./specs/flip-flops/design.md) | [task03](../docs/task/step2/task03.md) |
 | [sequential-circuits](./specs/sequential-circuits/spec.md) | `/seq` | [spec](./specs/sequential-circuits/spec.md) · [design](./specs/sequential-circuits/design.md) | [task04](../docs/task/step2/task04.md) |
+| [cpu](./specs/cpu/spec.md) | `/cpu` | [spec](./specs/cpu/spec.md) · [design](./specs/cpu/design.md) | ISA [`docs/isa.md`](../docs/isa.md)；archive P5–P9 |
 
 ## 北星与后续 change
 
-终极目标：简易 CPU + 简单汇编。见 [`docs/roadmap.md`](../docs/roadmap.md)。
+终极目标：简易 CPU + 简单汇编。见 [`docs/roadmap.md`](../docs/roadmap.md)、[`docs/isa.md`](../docs/isa.md)。
 
-| 顺序 | Change 名 | 说明 |
+| 顺序 | Change 名 | 状态 |
 |------|-----------|------|
-| P5 | `add-datapath-blocks` | ALU/MUX/总线等通路积木 |
-| P6 | `add-memory-model` | ROM/RAM/RegFile |
-| P7 | `add-control-unit` | 控制 / FSM |
-| P8 | `add-simple-cpu` | 独立 CPU feature |
-| P9 | `add-asm-toolchain` | 汇编器与程序运行 |
+| P5 | `add-datapath-blocks` | 已归档 2026-11-06 |
+| P6 | `add-memory-model` | 已归档 2026-11-06 |
+| P7 | `add-control-unit` | 已归档 2026-11-06 |
+| P8 | `add-simple-cpu` | 已归档 2026-11-06 |
+| P9 | `add-asm-toolchain` | 已归档 2026-11-06 |
+| — | `add-cpu-datapath-canvas` | 已归档 2026-11-06（教学 16×8 电路 Tab） |
 
 已归档变更见 [`changes/archive/`](./changes/archive/)。Agent 约定：[`AGENTS.md`](../AGENTS.md)。

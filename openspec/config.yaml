@@ -4,10 +4,10 @@ schema: spec-driven
 context: |
   zeda 是纯前端数字逻辑学习/仿真 SPA。base 固定 /zeda/。
   北星：教学用简易 CPU + 简单汇编装载/运行（可下钻）。路线图 docs/roadmap.md。
-  已交付：app-shell、logic-gates、combo-circuits、flip-flops、sequential-circuits。
-  阶段任务全文：docs/task/step1|step2/task0N.md；Cursor 计划：.cursor/plans/。
+  已交付：app-shell、logic-gates、combo-circuits、flip-flops、sequential-circuits、cpu。
+  ISA：docs/isa.md。阶段任务全文：docs/task/；Cursor 计划：.cursor/plans/。
   openspec/specs 为可验收行为真相；细节种子/冒烟与 task 对齐，冲突以代码 + specs 为准。
-  四特性独立 Dexie；组合用 netlist，时序用 seq-sim；CPU/汇编须新 feature。
+  五特性独立 Dexie；组合用 netlist，时序用 seq-sim；CPU 指令语义在 cpu-runtime。
   Agent：AGENTS.md；架构：docs/architecture.md。
 
 rules:

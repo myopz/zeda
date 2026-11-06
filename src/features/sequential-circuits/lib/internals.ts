@@ -1,4 +1,5 @@
 import type { BuiltinKey, LogicGate } from '@/features/logic-gates/types'
+import { getModule } from '@/features/combo-circuits/lib/modules'
 import { getFfModule } from '@/features/flip-flops/lib/ff-modules'
 import {
   getSeqModule,
@@ -10,6 +11,8 @@ import type {
   CircuitWire,
   SeqGateNode,
   SeqFfNode,
+  SeqModuleNode,
+  SeqComboModuleNode,
   SeqNode,
   SequentialCircuit,
   WireEndpoint,
@@ -121,8 +124,31 @@ const GAP_Y = 64
 const COL = GATE_W + GAP_X
 const ROW = GATE_H + GAP_Y
 
+/** Match DeviceNode: label+pad ≈ 22px; port strip = max(32, rows×20). */
+function cardHeight(inputCount: number, outputCount: number): number {
+  const rows = Math.max(inputCount, outputCount, 1)
+  return 22 + Math.max(32, rows * 20)
+}
+
 function nodeSize(n: SeqNode): { w: number; h: number } {
-  return n.kind === 'gate' ? { w: GATE_W, h: GATE_H } : { w: MODULE_W, h: MODULE_H }
+  if (n.kind === 'gate') return { w: GATE_W, h: GATE_H }
+  if (n.kind === 'ff') {
+    const mod = getFfModule(n.moduleKey)
+    if (mod) {
+      return { w: MODULE_W, h: cardHeight(mod.inputs.length, mod.outputs.length) }
+    }
+  } else if (n.kind === 'seq') {
+    const mod = getSeqModule(n.moduleKey)
+    if (mod) {
+      return { w: MODULE_W, h: cardHeight(mod.inputs.length, mod.outputs.length) }
+    }
+  } else if (n.kind === 'comboModule') {
+    const mod = getModule(n.moduleKey)
+    if (mod) {
+      return { w: MODULE_W, h: cardHeight(mod.inputs.length, mod.outputs.length) }
+    }
+  }
+  return { w: MODULE_W, h: MODULE_H }
 }
 
 function spaceNodes(nodes: SeqNode[]): SeqNode[] {
@@ -149,6 +175,39 @@ function spaceNodes(nodes: SeqNode[]): SeqNode[] {
       n.position.y = y
       nextY = y + h + GAP_Y
     }
+  }
+  // Cross-column: tall wide modules (mux/regfile) must not overlap neighbors.
+  for (let pass = 0; pass < 24; pass += 1) {
+    let changed = false
+    for (let i = 0; i < placed.length; i += 1) {
+      for (let j = i + 1; j < placed.length; j += 1) {
+        const a = placed[i]!
+        const b = placed[j]!
+        const sa = nodeSize(a)
+        const sb = nodeSize(b)
+        const overlapX =
+          a.position.x < b.position.x + sb.w + GAP_X &&
+          b.position.x < a.position.x + sa.w + GAP_X
+        const overlapY =
+          a.position.y < b.position.y + sb.h + GAP_Y &&
+          b.position.y < a.position.y + sa.h + GAP_Y
+        if (!overlapX || !overlapY) continue
+        if (a.position.y <= b.position.y) {
+          const ny = a.position.y + sa.h + GAP_Y
+          if (b.position.y < ny) {
+            b.position.y = ny
+            changed = true
+          }
+        } else {
+          const ny = b.position.y + sb.h + GAP_Y
+          if (a.position.y < ny) {
+            a.position.y = ny
+            changed = true
+          }
+        }
+      }
+    }
+    if (!changed) break
   }
   return placed
 }
@@ -207,37 +266,88 @@ function addFf(
   }
 }
 
+function addSeqModule(
+  b: Builder,
+  moduleKey: SeqModuleKey,
+  x: number,
+  y: number,
+  tag: string,
+): { id: string; pin: (name: string, role: 'in' | 'out') => WireEndpoint } {
+  const mod = getSeqModule(moduleKey)
+  if (!mod) throw new Error(`Missing seq module ${moduleKey}`)
+  const id = `${b.prefix}_${tag}_${moduleKey}_${b.seq++}`
+  const node: SeqModuleNode = {
+    id,
+    kind: 'seq',
+    moduleKey,
+    position: { x, y },
+  }
+  b.nodes.push(node)
+  return {
+    id,
+    pin(name, role) {
+      const list = role === 'in' ? mod.inputs : mod.outputs
+      const p = list.find((x) => x.name === name)
+      if (!p) throw new Error(`${moduleKey} missing ${role} pin ${name}`)
+      return { nodeId: id, pinId: p.id }
+    },
+  }
+}
+
+function addComboModule(
+  b: Builder,
+  moduleKey: string,
+  x: number,
+  y: number,
+  tag: string,
+): { id: string; pin: (name: string, role: 'in' | 'out') => WireEndpoint } {
+  const mod = getModule(moduleKey)
+  if (!mod) throw new Error(`Missing combo module ${moduleKey}`)
+  const id = `${b.prefix}_${tag}_${moduleKey}_${b.seq++}`
+  const node: SeqComboModuleNode = {
+    id,
+    kind: 'comboModule',
+    moduleKey,
+    position: { x, y },
+  }
+  b.nodes.push(node)
+  return {
+    id,
+    pin(name, role) {
+      const list = role === 'in' ? mod.inputs : mod.outputs
+      const p = list.find((x) => x.name === name)
+      if (!p) throw new Error(`${moduleKey} missing ${role} pin ${name}`)
+      return { nodeId: id, pinId: p.id }
+    },
+  }
+}
+
 /**
- * 4-bit parallel register: per bit, D_ff = nLOAD'·Di + nLOAD·Qi
+ * Parallel register: per bit, D_ff = nLOAD'·Di + nLOAD·Qi
  * (nLOAD active-low load; nLOAD=1 holds).
  */
-function buildReg4(gates: LogicGate[]): SequentialCircuit {
-  const key = 'reg_4'
+function buildRegN(key: 'reg_4' | 'reg_8', width: 4 | 8, gates: LogicGate[]): SequentialCircuit {
   const { inputs, outputs } = ioPins(key)
   const b = createBuilder(gates, key)
   const nLoad = io(findPin(inputs, 'nLOAD'))
   const clk = io(findPin(inputs, 'CLK'))
   const nClr = io(findPin(inputs, 'nCLR'))
 
-  // Shared NOT(nLOAD) for all bit muxes
   const nLoadInv = addGate(b, 'not', 0, -ROW, 'nload_inv')
   connect(b, nLoad, gIn(nLoadInv.id, nLoadInv.gate, 'A'))
 
-  const ffs = [0, 1, 2, 3].map((i) =>
+  const ffs = Array.from({ length: width }, (_, i) =>
     addFf(b, 'd_edge', 3 * COL, i * ROW, `q${i}`),
   )
 
-  for (let i = 0; i < 4; i += 1) {
+  for (let i = 0; i < width; i += 1) {
     const y = i * ROW
-    // loadPath = NOT(nLOAD) AND Di
     const andLoad = addGate(b, 'and', COL, y, `load${i}`)
     connect(b, gOut(nLoadInv.id, nLoadInv.gate, 'Y'), gIn(andLoad.id, andLoad.gate, 'A'))
     connect(b, io(findPin(inputs, `D${i}`)), gIn(andLoad.id, andLoad.gate, 'B'))
-    // holdPath = nLOAD AND Qi  (wired after FF exists; use feedback)
     const andHold = addGate(b, 'and', COL, y + ROW * 0.35, `hold${i}`)
     connect(b, nLoad, gIn(andHold.id, andHold.gate, 'A'))
     connect(b, ffs[i]!.pin('Q', 'out'), gIn(andHold.id, andHold.gate, 'B'))
-    // D_ff = loadPath OR holdPath
     const orMux = addGate(b, 'or', 2 * COL, y, `mux${i}`)
     connect(b, gOut(andLoad.id, andLoad.gate, 'Y'), gIn(orMux.id, orMux.gate, 'A'))
     connect(b, gOut(andHold.id, andHold.gate, 'Y'), gIn(orMux.id, orMux.gate, 'B'))
@@ -245,7 +355,6 @@ function buildReg4(gates: LogicGate[]): SequentialCircuit {
 
     connect(b, clk, ffs[i]!.pin('CLK', 'in'))
     connect(b, nClr, ffs[i]!.pin('nCLR', 'in'))
-    // nPRE left undriven → sim defaults inactive (1)
     connect(b, ffs[i]!.pin('Q', 'out'), io(findPin(outputs, `Q${i}`)))
   }
   return finish(
@@ -253,7 +362,225 @@ function buildReg4(gates: LogicGate[]): SequentialCircuit {
     inputs,
     outputs,
     b,
-    '4× edge D + nLOAD mux (nLOAD′·D + nLOAD·Q); common CLK / nCLR',
+    `${width}× edge D + nLOAD mux (nLOAD′·D + nLOAD·Q); common CLK / nCLR`,
+  )
+}
+
+function buildReg4(gates: LogicGate[]): SequentialCircuit {
+  return buildRegN('reg_4', 4, gates)
+}
+
+function buildReg8(gates: LogicGate[]): SequentialCircuit {
+  return buildRegN('reg_8', 8, gates)
+}
+
+/** 8× reg_8 + decoder_3_8 write select; read via mux_2_1_8 trees. */
+function buildRegFile8x8(gates: LogicGate[]): SequentialCircuit {
+  const key: SeqModuleKey = 'regfile_8x8'
+  const { inputs, outputs } = ioPins(key)
+  const b = createBuilder(gates, key)
+  const clk = io(findPin(inputs, 'CLK'))
+  const we = io(findPin(inputs, 'WE'))
+
+  const dec = addComboModule(b, 'decoder_3_8', 0, 0, 'wadec')
+  connect(b, io(findPin(inputs, 'WA2')), dec.pin('A2', 'in'))
+  connect(b, io(findPin(inputs, 'WA1')), dec.pin('A1', 'in'))
+  connect(b, io(findPin(inputs, 'WA0')), dec.pin('A0', 'in'))
+
+  const regs = Array.from({ length: 8 }, (_, r) => {
+    const reg = addSeqModule(b, 'reg_8', 3 * COL, r * (ROW * 1.2), `r${r}`)
+    connect(b, clk, reg.pin('CLK', 'in'))
+    for (let i = 0; i < 8; i += 1) {
+      connect(b, io(findPin(inputs, `D${i}`)), reg.pin(`D${i}`, 'in'))
+    }
+    // nLOAD = ¬(WE ∧ Yi) = NAND(WE, Yi) via AND+NOT
+    const andSel = addGate(b, 'and', 1.5 * COL, r * (ROW * 1.2), `wsel${r}`)
+    connect(b, we, gIn(andSel.id, andSel.gate, 'A'))
+    connect(b, dec.pin(`Y${r}`, 'out'), gIn(andSel.id, andSel.gate, 'B'))
+    const nLoad = addGate(b, 'not', 2.2 * COL, r * (ROW * 1.2), `nld${r}`)
+    connect(b, gOut(andSel.id, andSel.gate, 'Y'), gIn(nLoad.id, nLoad.gate, 'A'))
+    connect(b, gOut(nLoad.id, nLoad.gate, 'Y'), reg.pin('nLOAD', 'in'))
+    // nCLR left undriven (inactive default)
+    return reg
+  })
+
+  // Build 8→1 mux tree of mux_2_1_8 for one read port
+  const buildReadTree = (
+    tag: string,
+    a2: WireEndpoint,
+    a1: WireEndpoint,
+    a0: WireEndpoint,
+    outPrefix: 'QA' | 'QB',
+    baseY: number,
+  ) => {
+    const level0 = [0, 1, 2, 3].map((p) => {
+      const mux = addComboModule(b, 'mux_2_1_8', 5 * COL, baseY + p * ROW * 2, `${tag}_l0_${p}`)
+      const r0 = regs[p * 2]!
+      const r1 = regs[p * 2 + 1]!
+      for (let i = 0; i < 8; i += 1) {
+        connect(b, r0.pin(`Q${i}`, 'out'), mux.pin(`A${i}`, 'in'))
+        connect(b, r1.pin(`Q${i}`, 'out'), mux.pin(`B${i}`, 'in'))
+      }
+      connect(b, a0, mux.pin('S', 'in'))
+      return mux
+    })
+    const level1 = [0, 1].map((p) => {
+      const mux = addComboModule(b, 'mux_2_1_8', 7 * COL, baseY + p * ROW * 4, `${tag}_l1_${p}`)
+      for (let i = 0; i < 8; i += 1) {
+        connect(b, level0[p * 2]!.pin(`Y${i}`, 'out'), mux.pin(`A${i}`, 'in'))
+        connect(b, level0[p * 2 + 1]!.pin(`Y${i}`, 'out'), mux.pin(`B${i}`, 'in'))
+      }
+      connect(b, a1, mux.pin('S', 'in'))
+      return mux
+    })
+    const top = addComboModule(b, 'mux_2_1_8', 9 * COL, baseY + ROW * 2, `${tag}_top`)
+    for (let i = 0; i < 8; i += 1) {
+      connect(b, level1[0]!.pin(`Y${i}`, 'out'), top.pin(`A${i}`, 'in'))
+      connect(b, level1[1]!.pin(`Y${i}`, 'out'), top.pin(`B${i}`, 'in'))
+      connect(b, top.pin(`Y${i}`, 'out'), io(findPin(outputs, `${outPrefix}${i}`)))
+    }
+    connect(b, a2, top.pin('S', 'in'))
+  }
+
+  buildReadTree(
+    'ra',
+    io(findPin(inputs, 'RA2')),
+    io(findPin(inputs, 'RA1')),
+    io(findPin(inputs, 'RA0')),
+    'QA',
+    0,
+  )
+  buildReadTree(
+    'rb',
+    io(findPin(inputs, 'RB2')),
+    io(findPin(inputs, 'RB1')),
+    io(findPin(inputs, 'RB0')),
+    'QB',
+    10 * ROW,
+  )
+
+  return finish(
+    key,
+    inputs,
+    outputs,
+    b,
+    '8× reg_8 + decoder_3_8 write; dual mux_2_1_8 read trees (step authoritative)',
+  )
+}
+
+/** 16×8 RAM: two decoder_3_8 banks + 16× reg_8; nOE gates Q. */
+function buildRam16x8(gates: LogicGate[]): SequentialCircuit {
+  const key: SeqModuleKey = 'ram_16x8'
+  const { inputs, outputs } = ioPins(key)
+  const b = createBuilder(gates, key)
+  const clk = io(findPin(inputs, 'CLK'))
+  const nWe = io(findPin(inputs, 'nWE'))
+  const nOe = io(findPin(inputs, 'nOE'))
+  const a3 = io(findPin(inputs, 'A3'))
+
+  const a3Inv = addGate(b, 'not', 0, -ROW, 'a3inv')
+  connect(b, a3, gIn(a3Inv.id, a3Inv.gate, 'A'))
+
+  const decLo = addComboModule(b, 'decoder_3_8', 0, 0, 'declo')
+  const decHi = addComboModule(b, 'decoder_3_8', 0, 10 * ROW, 'dechi')
+  for (const dec of [decLo, decHi]) {
+    connect(b, io(findPin(inputs, 'A2')), dec.pin('A2', 'in'))
+    connect(b, io(findPin(inputs, 'A1')), dec.pin('A1', 'in'))
+    connect(b, io(findPin(inputs, 'A0')), dec.pin('A0', 'in'))
+  }
+
+  // nWE active-low write → WE_eff = ¬nWE
+  const weEff = addGate(b, 'not', COL, -ROW * 2, 'weeff')
+  connect(b, nWe, gIn(weEff.id, weEff.gate, 'A'))
+
+  const regs = Array.from({ length: 16 }, (_, addr) => {
+    const bank = addr < 8 ? 0 : 1
+    const idx = addr % 8
+    const dec = bank === 0 ? decLo : decHi
+    const enA3 = bank === 0 ? gOut(a3Inv.id, a3Inv.gate, 'Y') : a3
+    const row = bank * 10 * ROW + idx * ROW
+    const reg = addSeqModule(b, 'reg_8', 4 * COL, row, `m${addr}`)
+    connect(b, clk, reg.pin('CLK', 'in'))
+    for (let i = 0; i < 8; i += 1) {
+      connect(b, io(findPin(inputs, `D${i}`)), reg.pin(`D${i}`, 'in'))
+    }
+    const andBank = addGate(b, 'and', 2 * COL, row, `bank${addr}`)
+    connect(b, enA3, gIn(andBank.id, andBank.gate, 'A'))
+    connect(b, dec.pin(`Y${idx}`, 'out'), gIn(andBank.id, andBank.gate, 'B'))
+    const andWe = addGate(b, 'and', 2.7 * COL, row, `we${addr}`)
+    connect(b, gOut(weEff.id, weEff.gate, 'Y'), gIn(andWe.id, andWe.gate, 'A'))
+    connect(b, gOut(andBank.id, andBank.gate, 'Y'), gIn(andWe.id, andWe.gate, 'B'))
+    const nLoad = addGate(b, 'not', 3.4 * COL, row, `nld${addr}`)
+    connect(b, gOut(andWe.id, andWe.gate, 'Y'), gIn(nLoad.id, nLoad.gate, 'A'))
+    connect(b, gOut(nLoad.id, nLoad.gate, 'Y'), reg.pin('nLOAD', 'in'))
+    return { reg, sel: gOut(andBank.id, andBank.gate, 'Y') }
+  })
+
+  // Read mux: select among 16 words then AND with ¬nOE
+  // Compact teaching stand-in: OR of (Qi ∧ sel_i) per bit — wired for word 0..15
+  const oeInv = addGate(b, 'not', 6 * COL, -ROW, 'oeinv')
+  connect(b, nOe, gIn(oeInv.id, oeInv.gate, 'A'))
+
+  for (let bit = 0; bit < 8; bit += 1) {
+    let acc: WireEndpoint | null = null
+    for (let addr = 0; addr < 16; addr += 1) {
+      const andCell = addGate(b, 'and', 6.5 * COL + (addr % 4) * 20, bit * ROW + Math.floor(addr / 4) * 12, `rd${addr}_${bit}`)
+      connect(b, regs[addr]!.reg.pin(`Q${bit}`, 'out'), gIn(andCell.id, andCell.gate, 'A'))
+      connect(b, regs[addr]!.sel, gIn(andCell.id, andCell.gate, 'B'))
+      if (!acc) {
+        acc = gOut(andCell.id, andCell.gate, 'Y')
+      } else {
+        const orA = addGate(b, 'or', 8 * COL, bit * ROW + addr, `ordo${bit}_${addr}`)
+        connect(b, acc, gIn(orA.id, orA.gate, 'A'))
+        connect(b, gOut(andCell.id, andCell.gate, 'Y'), gIn(orA.id, orA.gate, 'B'))
+        acc = gOut(orA.id, orA.gate, 'Y')
+      }
+    }
+    const andOe = addGate(b, 'and', 9.5 * COL, bit * ROW, `oe${bit}`)
+    connect(b, acc!, gIn(andOe.id, andOe.gate, 'A'))
+    connect(b, gOut(oeInv.id, oeInv.gate, 'Y'), gIn(andOe.id, andOe.gate, 'B'))
+    connect(b, gOut(andOe.id, andOe.gate, 'Y'), io(findPin(outputs, `Q${bit}`)))
+  }
+
+  return finish(
+    key,
+    inputs,
+    outputs,
+    b,
+    '16× reg_8 + dual decoder_3_8; step() authoritative for storage',
+  )
+}
+
+/**
+ * ROM[i]=(i<<4)|(~i & 0xF) → Q[7:4]=A[3:0], Q[3:0]=¬A[3:0].
+ */
+function buildRom16x8(gates: LogicGate[]): SequentialCircuit {
+  const key: SeqModuleKey = 'rom_16x8'
+  const { inputs, outputs } = ioPins(key)
+  const b = createBuilder(gates, key)
+
+  for (let i = 0; i < 4; i += 1) {
+    const a = io(findPin(inputs, `A${i}`))
+    const n = addGate(b, 'not', COL, i * ROW, `n${i}`)
+    connect(b, a, gIn(n.id, n.gate, 'A'))
+    // Low nibble: Q_i = ¬A_i
+    connect(b, gOut(n.id, n.gate, 'Y'), io(findPin(outputs, `Q${i}`)))
+    // High nibble: Q_{i+4} = A_i (wire through OR with 0 = A·¬A)
+    const z = addGate(b, 'and', 2 * COL, i * ROW, `z${i}`)
+    connect(b, a, gIn(z.id, z.gate, 'A'))
+    connect(b, gOut(n.id, n.gate, 'Y'), gIn(z.id, z.gate, 'B'))
+    const buf = addGate(b, 'or', 3 * COL, i * ROW, `buf${i}`)
+    connect(b, a, gIn(buf.id, buf.gate, 'A'))
+    connect(b, gOut(z.id, z.gate, 'Y'), gIn(buf.id, buf.gate, 'B'))
+    connect(b, gOut(buf.id, buf.gate, 'Y'), io(findPin(outputs, `Q${i + 4}`)))
+  }
+
+  return finish(
+    key,
+    inputs,
+    outputs,
+    b,
+    'ROM[i]=(i<<4)|(~i&0xF) ⇒ Q[7:4]=A, Q[3:0]=¬A',
   )
 }
 
@@ -417,6 +744,14 @@ export function buildSeqInternals(
   switch (key) {
     case 'reg_4':
       return buildReg4(gates)
+    case 'reg_8':
+      return buildReg8(gates)
+    case 'regfile_8x8':
+      return buildRegFile8x8(gates)
+    case 'ram_16x8':
+      return buildRam16x8(gates)
+    case 'rom_16x8':
+      return buildRom16x8(gates)
     case 'shift_reg_4_left':
     case 'shift_reg_4_right':
       return buildShift(key, gates)

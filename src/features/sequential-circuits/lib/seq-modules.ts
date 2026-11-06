@@ -4,7 +4,7 @@ import type {
 } from '@/features/flip-flops/lib/seq-sim'
 import { getFfModule } from '@/features/flip-flops/lib/ff-modules'
 
-export type SeqCategory = 'register' | 'counter' | 'ttl'
+export type SeqCategory = 'register' | 'counter' | 'memory' | 'ttl'
 
 export type SeqModuleDef = StatefulModule & {
   category: SeqCategory
@@ -12,6 +12,7 @@ export type SeqModuleDef = StatefulModule & {
 
 export const SEQ_MODULE_KEYS = [
   'reg_4',
+  'reg_8',
   'shift_reg_4_left',
   'shift_reg_4_right',
   'counter_bin_sync_4',
@@ -20,6 +21,9 @@ export const SEQ_MODULE_KEYS = [
   'counter_dec_sync',
   'counter_dec_async',
   'counter_mod6_sync',
+  'regfile_8x8',
+  'ram_16x8',
+  'rom_16x8',
   '74ls161',
   '74ls90',
   '74ls194',
@@ -75,14 +79,14 @@ function qNames(width: number): string[] {
   return Array.from({ length: width }, (_, i) => `Q${i}`)
 }
 
-function makeReg4(): SeqModuleDef {
-  const key = 'reg_4'
+function makeReg(width: 4 | 8, key: 'reg_4' | 'reg_8'): SeqModuleDef {
+  const dNames = Array.from({ length: width }, (_, i) => `D${i}`)
   return {
     key,
     category: 'register',
-    inputs: pins(key, ['D0', 'D1', 'D2', 'D3', 'CLK', 'nLOAD', 'nCLR'], 'in'),
-    outputs: pins(key, qNames(4), 'out'),
-    stateNames: qNames(4),
+    inputs: pins(key, [...dNames, 'CLK', 'nLOAD', 'nCLR'], 'in'),
+    outputs: pins(key, qNames(width), 'out'),
+    stateNames: qNames(width),
     clockMode: 'posedge',
     clockPin: 'CLK',
     equations: [
@@ -91,23 +95,186 @@ function makeReg4(): SeqModuleDef {
     ],
     step({ prevState, inputs, prevClk }) {
       if (asyncLow(inputs.nCLR)) {
-        return { nextState: writeQ(0, 4).state, outputs: writeQ(0, 4).outputs }
+        return { nextState: writeQ(0, width).state, outputs: writeQ(0, width).outputs }
       }
       const clk = inputs.CLK ?? 0
       if (!rising(prevClk, clk)) {
-        const cur = writeQ(readQ(prevState, 4), 4)
+        const cur = writeQ(readQ(prevState, width), width)
         return { nextState: cur.state, outputs: cur.outputs }
       }
       if (asyncLow(inputs.nLOAD)) {
         let n = 0
-        for (let i = 0; i < 4; i += 1) {
+        for (let i = 0; i < width; i += 1) {
           if (inputs[`D${i}`]) n |= 1 << i
         }
-        const next = writeQ(n, 4)
+        const next = writeQ(n, width)
         return { nextState: next.state, outputs: next.outputs }
       }
-      const cur = writeQ(readQ(prevState, 4), 4)
+      const cur = writeQ(readQ(prevState, width), width)
       return { nextState: cur.state, outputs: cur.outputs }
+    },
+  }
+}
+
+function makeReg4(): SeqModuleDef {
+  return makeReg(4, 'reg_4')
+}
+
+function makeReg8(): SeqModuleDef {
+  return makeReg(8, 'reg_8')
+}
+
+/** Dual-read / single-write 8×8 register file. Sync write on ↑CLK & WE=1. */
+function makeRegFile8x8(): SeqModuleDef {
+  const key = 'regfile_8x8'
+  const stateNames: string[] = []
+  for (let r = 0; r < 8; r += 1) {
+    for (let b = 0; b < 8; b += 1) stateNames.push(`R${r}_${b}`)
+  }
+  const dNames = Array.from({ length: 8 }, (_, i) => `D${i}`)
+  const qa = Array.from({ length: 8 }, (_, i) => `QA${i}`)
+  const qb = Array.from({ length: 8 }, (_, i) => `QB${i}`)
+  return {
+    key,
+    category: 'memory',
+    inputs: pins(
+      key,
+      ['WA2', 'WA1', 'WA0', 'RA2', 'RA1', 'RA0', 'RB2', 'RB1', 'RB0', ...dNames, 'WE', 'CLK'],
+      'in',
+    ),
+    outputs: pins(key, [...qa, ...qb], 'out'),
+    stateNames,
+    clockMode: 'posedge',
+    clockPin: 'CLK',
+    equations: [
+      'Combinational dual read QA=R[RA], QB=R[RB]',
+      '↑CLK & WE=1: R[WA] ← D',
+    ],
+    step({ prevState, inputs, prevClk }) {
+      const regs = new Uint8Array(8)
+      for (let r = 0; r < 8; r += 1) {
+        let n = 0
+        for (let b = 0; b < 8; b += 1) {
+          if (prevState[`R${r}_${b}`]) n |= 1 << b
+        }
+        regs[r] = n
+      }
+      const clk = inputs.CLK ?? 0
+      if (rising(prevClk, clk) && inputs.WE === 1) {
+        const wa =
+          ((inputs.WA2 ?? 0) << 2) | ((inputs.WA1 ?? 0) << 1) | (inputs.WA0 ?? 0)
+        let d = 0
+        for (let i = 0; i < 8; i += 1) {
+          if (inputs[`D${i}`]) d |= 1 << i
+        }
+        regs[wa] = d
+      }
+      const ra =
+        ((inputs.RA2 ?? 0) << 2) | ((inputs.RA1 ?? 0) << 1) | (inputs.RA0 ?? 0)
+      const rb =
+        ((inputs.RB2 ?? 0) << 2) | ((inputs.RB1 ?? 0) << 1) | (inputs.RB0 ?? 0)
+      const nextState: Record<string, Bit> = {}
+      for (let r = 0; r < 8; r += 1) {
+        for (let b = 0; b < 8; b += 1) {
+          nextState[`R${r}_${b}`] = bit((regs[r]! >> b) & 1)
+        }
+      }
+      const outputs: Record<string, Bit> = {}
+      for (let i = 0; i < 8; i += 1) {
+        outputs[`QA${i}`] = bit((regs[ra]! >> i) & 1)
+        outputs[`QB${i}`] = bit((regs[rb]! >> i) & 1)
+      }
+      return { nextState, outputs }
+    },
+  }
+}
+
+/** 16×8 sync RAM: write on ↑CLK & nWE=0; read combinational when nOE=0. */
+function makeRam16x8(): SeqModuleDef {
+  const key = 'ram_16x8'
+  const stateNames: string[] = []
+  for (let a = 0; a < 16; a += 1) {
+    for (let b = 0; b < 8; b += 1) stateNames.push(`M${a}_${b}`)
+  }
+  const dNames = Array.from({ length: 8 }, (_, i) => `D${i}`)
+  const qNamesOut = Array.from({ length: 8 }, (_, i) => `Q${i}`)
+  return {
+    key,
+    category: 'memory',
+    inputs: pins(key, ['A3', 'A2', 'A1', 'A0', ...dNames, 'nWE', 'nOE', 'CLK'], 'in'),
+    outputs: pins(key, qNamesOut, 'out'),
+    stateNames,
+    clockMode: 'posedge',
+    clockPin: 'CLK',
+    equations: [
+      '↑CLK & nWE=0: Mem[A] ← D',
+      'nOE=0: Q=Mem[A]; else Q=0',
+    ],
+    step({ prevState, inputs, prevClk }) {
+      const mem = new Uint8Array(16)
+      for (let a = 0; a < 16; a += 1) {
+        let n = 0
+        for (let b = 0; b < 8; b += 1) {
+          if (prevState[`M${a}_${b}`]) n |= 1 << b
+        }
+        mem[a] = n
+      }
+      const addr =
+        ((inputs.A3 ?? 0) << 3) |
+        ((inputs.A2 ?? 0) << 2) |
+        ((inputs.A1 ?? 0) << 1) |
+        (inputs.A0 ?? 0)
+      const clk = inputs.CLK ?? 0
+      if (rising(prevClk, clk) && asyncLow(inputs.nWE)) {
+        let d = 0
+        for (let i = 0; i < 8; i += 1) {
+          if (inputs[`D${i}`]) d |= 1 << i
+        }
+        mem[addr] = d
+      }
+      const nextState: Record<string, Bit> = {}
+      for (let a = 0; a < 16; a += 1) {
+        for (let b = 0; b < 8; b += 1) {
+          nextState[`M${a}_${b}`] = bit((mem[a]! >> b) & 1)
+        }
+      }
+      const q = asyncLow(inputs.nOE) ? mem[addr]! : 0
+      const outputs: Record<string, Bit> = {}
+      for (let i = 0; i < 8; i += 1) outputs[`Q${i}`] = bit((q >> i) & 1)
+      return { nextState, outputs }
+    },
+  }
+}
+
+/**
+ * 16×8 ROM teaching contents: ROM[i] = (i<<4) | (~i & 0xF)
+ * → Q[7:4]=A, Q[3:0]=¬A so all eight data pins respond to address.
+ */
+function makeRom16x8(): SeqModuleDef {
+  const key = 'rom_16x8'
+  const contents = Uint8Array.from(
+    { length: 16 },
+    (_, i) => ((i << 4) | ((~i) & 0xf)) & 0xff,
+  )
+  const qNamesOut = Array.from({ length: 8 }, (_, i) => `Q${i}`)
+  return {
+    key,
+    category: 'memory',
+    inputs: pins(key, ['A3', 'A2', 'A1', 'A0'], 'in'),
+    outputs: pins(key, qNamesOut, 'out'),
+    stateNames: [],
+    clockMode: 'none',
+    equations: ['Q = ROM[A]; ROM[i]=(i<<4)|(~i & 0xF)'],
+    step({ inputs }) {
+      const addr =
+        ((inputs.A3 ?? 0) << 3) |
+        ((inputs.A2 ?? 0) << 2) |
+        ((inputs.A1 ?? 0) << 1) |
+        (inputs.A0 ?? 0)
+      const q = contents[addr]!
+      const outputs: Record<string, Bit> = {}
+      for (let i = 0; i < 8; i += 1) outputs[`Q${i}`] = bit((q >> i) & 1)
+      return { nextState: {}, outputs }
     },
   }
 }
@@ -432,6 +599,7 @@ function make74ls194(): SeqModuleDef {
 
 export const SEQ_MODULES: Record<SeqModuleKey, SeqModuleDef> = {
   reg_4: makeReg4(),
+  reg_8: makeReg8(),
   shift_reg_4_left: makeShift('shift_reg_4_left', 'left'),
   shift_reg_4_right: makeShift('shift_reg_4_right', 'right'),
   counter_bin_sync_4: makeCounterBinSync4(),
@@ -440,6 +608,9 @@ export const SEQ_MODULES: Record<SeqModuleKey, SeqModuleDef> = {
   counter_dec_sync: makeModCounter('counter_dec_sync', 10, false),
   counter_dec_async: makeModCounter('counter_dec_async', 10, true),
   counter_mod6_sync: makeModCounter('counter_mod6_sync', 6, false),
+  regfile_8x8: makeRegFile8x8(),
+  ram_16x8: makeRam16x8(),
+  rom_16x8: makeRom16x8(),
   '74ls161': make74ls161(),
   '74ls90': make74ls90(),
   '74ls194': make74ls194(),

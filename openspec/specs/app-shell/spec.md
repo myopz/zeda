@@ -33,7 +33,7 @@
 #### Scenario: Sidebar entries
 
 - **WHEN** 侧栏展开  
-- **THEN** 可见逻辑门 `/lgc`、组合电路 `/clc`、触发器 `/ff`、时序电路 `/seq` 入口（i18n：`nav.logicGates` / `nav.comboCircuits` / `nav.flipFlops` / `nav.sequential`）
+- **THEN** 可见逻辑门 `/lgc`、组合电路 `/clc`、触发器 `/ff`、时序电路 `/seq`、简易 CPU `/cpu` 入口（i18n：`nav.logicGates` / `nav.comboCircuits` / `nav.flipFlops` / `nav.sequential` / `nav.cpu`）
 
 #### Scenario: Collapse on small screen
 

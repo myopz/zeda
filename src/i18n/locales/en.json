@@ -10,7 +10,8 @@
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
     "flipFlops": "Flip-Flops",
-    "sequential": "Sequential"
+    "sequential": "Sequential",
+    "cpu": "Simple CPU"
   },
   "theme": {
     "label": "Theme",
@@ -186,7 +187,8 @@
       "adder": "Adders",
       "encoder": "Encoders",
       "decoder": "Decoders",
-      "ttl": "74LS Series"
+      "ttl": "74LS Series",
+      "datapath": "Datapath"
     },
     "modules": {
       "half_adder": "Half Adder",
@@ -198,7 +200,12 @@
       "seven_seg_decoder": "Seven-Segment Decoder (CC)",
       "74ls138": "74LS138",
       "74ls148": "74LS148",
-      "74ls283": "74LS283"
+      "74ls283": "74LS283",
+      "mux_2_1_8": "8-bit 2:1 Mux",
+      "mux_4_1_8": "8-bit 4:1 Mux",
+      "demux_1_2_8": "8-bit 1:2 Demux",
+      "alu_8": "8-bit ALU",
+      "cmp_8": "8-bit Comparator"
     }
   },
   "flipflops": {
@@ -385,7 +392,8 @@
       "flipflop": "Flip-flops",
       "register": "Registers",
       "counter": "Counters",
-      "ttl": "74LS series"
+      "ttl": "74LS series",
+      "memory": "Memory"
     },
     "modules": {
       "reg_4": "4-bit Register",
@@ -399,9 +407,78 @@
       "counter_mod6_sync": "Sync Mod-6 Counter",
       "74ls161": "74LS161",
       "74ls90": "74LS90",
-      "74ls194": "74LS194"
+      "74ls194": "74LS194",
+      "reg_8": "8-bit Register",
+      "regfile_8x8": "8×8 Register File",
+      "ram_16x8": "16×8 Sync RAM",
+      "rom_16x8": "16×8 Teaching ROM (fixed LUT)"
     },
     "paletteFlipFlops": "Flip-flops",
     "paletteCircuits": "Other sequential circuits"
+  },
+  "cpu": {
+    "title": "Simple CPU",
+    "subtitle": "Zeda-8 teaching CPU: assemble, load, step, and run",
+    "name": "Name",
+    "description": "Description",
+    "builtin": "Built-in",
+    "custom": "Custom",
+    "create": "New program",
+    "deleteConfirm": "Delete «{{name}}»? This cannot be undone.",
+    "builtinReadonly": "Built-in programs are read-only; copy as custom to edit",
+    "copyAsCustom": "Copy as custom",
+    "copySuffix": " (copy)",
+    "saved": "Saved",
+    "copied": "Copied",
+    "listView": "List",
+    "cardView": "Cards",
+    "pageSize": "Per page",
+    "page": "Page {{page}} / {{total}}",
+    "total": "{{count}} total",
+    "updatedAt": "Updated",
+    "detail": "CPU program",
+    "asm": "Assembly",
+    "asmPlaceholder": "# Zeda-8 assembly\nLOADI R0, 1\nHALT\n",
+    "assemble": "Assemble",
+    "load": "Load to memory",
+    "reset": "Reset",
+    "step": "Step",
+    "run": "Run",
+    "stop": "Stop",
+    "registers": "Registers",
+    "flags": "Flags",
+    "memory": "Memory",
+    "control": "Control",
+    "pc": "PC",
+    "ir": "IR",
+    "phase": "Phase",
+    "halted": "Halted",
+    "running": "Running",
+    "asmError": "Assemble error: {{message}}",
+    "runtimeError": "Runtime error: {{message}}",
+    "assembledOk": "Assembled {{bytes}} bytes",
+    "loadedOk": "Loaded at 0x{{addr}}",
+    "examples": "Examples",
+    "newProgramName": "Custom program",
+    "source": "Source",
+    "machineCode": "Machine code",
+    "noMachineCode": "Assemble first",
+    "tabCircuit": "Circuit",
+    "tabAsm": "Assembly",
+    "datapathHint": "Teaching datapath (16×8). Active buses highlight amber; ⇅ drills into module internals.",
+    "blockControl": "Control",
+    "blockPc": "PC",
+    "blockMem": "RAM 16×8",
+    "blockIr": "IR",
+    "blockImm": "IMM",
+    "blockRf": "RegFile 8×8",
+    "blockAlu": "ALU",
+    "blockFlags": "Flags Z/C",
+    "blockWb": "WB mux",
+    "drillBack": "Back",
+    "drillPath": "Drill",
+    "loadTeachingError": "Teaching load failed: {{message}}",
+    "compareRuntime": "Compare with behavior runtime",
+    "compareMismatch": "Datapath/runtime mismatch: {{message}}"
   }
 }

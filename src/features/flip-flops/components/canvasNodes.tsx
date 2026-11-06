@@ -63,7 +63,8 @@ export function IoNode({ data }: NodeProps) {
   return (
     <div
       className={cn(
-        'rounded-md border bg-card px-3 py-2 text-xs shadow-sm',
+        // nodrag/nopan: RF would otherwise treat mousedown as node-drag and drop the click.
+        'nodrag nopan rounded-md border bg-card px-3 py-2 text-xs shadow-sm',
         bitClass(d.bit, d.role),
         highlightClass(d.highlight),
         toggleable && 'cursor-pointer select-none hover:brightness-95 active:scale-[0.98]',
@@ -133,10 +134,11 @@ export function DeviceNode({ data }: NodeProps) {
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-75">
             <GateSymbol gate={d.gate} width={52} height={26} />
           </div>
-        ) : canDrill ? (
+        ) : null}
+        {canDrill ? (
           <button
             type="button"
-            className="nodrag nopan absolute inset-0 z-[5] flex items-center justify-center text-[9px] text-muted-foreground hover:text-primary"
+            className="nodrag nopan absolute left-1/2 top-1/2 z-[5] flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded border border-transparent text-[10px] leading-none text-muted-foreground hover:border-border hover:bg-muted hover:text-primary"
             title="Inspect internals"
             aria-label="Inspect internals"
             onClick={(e) => {

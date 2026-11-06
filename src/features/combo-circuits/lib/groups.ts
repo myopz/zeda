@@ -8,6 +8,7 @@ export const PRESET_CIRCUIT_GROUPS = [
   'adder',
   'encoder',
   'decoder',
+  'datapath',
   'ttl',
   DEFAULT_CIRCUIT_GROUP,
 ] as const

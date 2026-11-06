@@ -1,6 +1,7 @@
 import {
   Boxes,
   CircuitBoard,
+  Cpu,
   PanelLeftClose,
   PanelLeftOpen,
   Timer,
@@ -86,6 +87,14 @@ export function AppSidebar({ collapsed, onToggle }: Props) {
         >
           <Workflow className="size-4 shrink-0" />
           {!collapsed && <span>{t('nav.sequential')}</span>}
+        </NavLink>
+        <NavLink
+          to="/cpu"
+          className={({ isActive }) => navClass(isActive, collapsed)}
+          title={t('nav.cpu')}
+        >
+          <Cpu className="size-4 shrink-0" />
+          {!collapsed && <span>{t('nav.cpu')}</span>}
         </NavLink>
       </nav>
     </aside>
