@@ -288,53 +288,53 @@ export function CpuDetailPage() {
   const sig = dp.signals
 
   return (
-    <div className="flex h-full flex-col gap-3 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
+    <div className="flex h-full min-h-0 flex-col gap-3">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
           <Link to="/cpu" className="text-sm text-muted-foreground hover:underline">
             ← {t('cpu.title')}
           </Link>
-          <h1 className="text-xl font-semibold">{program.name}</h1>
+          <h1 className="truncate text-lg font-semibold sm:text-xl">{program.name}</h1>
           {readonly && (
             <p className="text-xs text-muted-foreground">{t('cpu.builtinReadonly')}</p>
           )}
         </div>
         <div className="flex flex-wrap gap-2">
           {readonly ? (
-            <Button type="button" variant="outline" onClick={() => void onCopy()}>
+            <Button type="button" variant="outline" size="sm" onClick={() => void onCopy()}>
               {t('cpu.copyAsCustom')}
             </Button>
           ) : (
-            <Button type="button" onClick={() => void onSave()}>
+            <Button type="button" size="sm" onClick={() => void onSave()}>
               {t('common.save')}
             </Button>
           )}
         </div>
       </div>
 
-      <Tabs defaultValue="circuit" className="flex min-h-0 flex-1 flex-col">
-        <TabsList className="w-fit">
+      <Tabs defaultValue="circuit" className="flex min-h-0 flex-1 flex-col gap-2">
+        <TabsList className="w-fit shrink-0">
           <TabsTrigger value="circuit">{t('cpu.tabCircuit')}</TabsTrigger>
           <TabsTrigger value="asm">{t('cpu.tabAsm')}</TabsTrigger>
         </TabsList>
 
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Button type="button" variant="secondary" onClick={onAssemble}>
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5 sm:gap-2">
+          <Button type="button" size="sm" variant="secondary" onClick={onAssemble}>
             {t('cpu.assemble')}
           </Button>
-          <Button type="button" onClick={onLoad}>
+          <Button type="button" size="sm" onClick={onLoad}>
             {t('cpu.load')}
           </Button>
-          <Button type="button" variant="outline" onClick={onReset}>
+          <Button type="button" size="sm" variant="outline" onClick={onReset}>
             {t('cpu.reset')}
           </Button>
-          <Button type="button" variant="outline" onClick={onStep}>
+          <Button type="button" size="sm" variant="outline" onClick={onStep}>
             {t('cpu.step')}
           </Button>
-          <Button type="button" variant="outline" onClick={onRun}>
+          <Button type="button" size="sm" variant="outline" onClick={onRun}>
             {running ? t('cpu.stop') : t('cpu.run')}
           </Button>
-          <Button type="button" variant="ghost" onClick={onRunToHalt}>
+          <Button type="button" size="sm" variant="ghost" onClick={onRunToHalt}>
             Run→HALT
           </Button>
           <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -347,15 +347,18 @@ export function CpuDetailPage() {
           </label>
         </div>
 
-        {status && <p className="text-sm text-muted-foreground">{status}</p>}
+        {status && <p className="shrink-0 text-sm text-muted-foreground">{status}</p>}
         {error && (
-          <pre className="whitespace-pre-wrap rounded border border-destructive/40 bg-destructive/5 p-2 text-sm text-destructive">
+          <pre className="shrink-0 whitespace-pre-wrap rounded border border-destructive/40 bg-destructive/5 p-2 text-sm text-destructive">
             {error}
           </pre>
         )}
 
-        <TabsContent value="circuit" className="mt-2 flex min-h-0 flex-1 flex-col gap-2 data-[state=inactive]:hidden">
-          <div className="flex flex-wrap gap-3 rounded border px-3 py-2 font-mono text-xs">
+        <TabsContent
+          value="circuit"
+          className="mt-0 flex min-h-0 flex-1 flex-col gap-2 data-[state=inactive]:hidden"
+        >
+          <div className="flex shrink-0 flex-wrap gap-x-3 gap-y-1 rounded border px-2 py-1.5 font-mono text-[11px] sm:px-3 sm:text-xs">
             <span>
               {t('cpu.phase')}={dp.phase}
             </span>
@@ -370,33 +373,43 @@ export function CpuDetailPage() {
             <span>
               {t('cpu.halted')}={dp.halted ? '1' : '0'}
             </span>
-            <span className="text-muted-foreground">
+            <span className="w-full text-muted-foreground sm:w-auto">
               ctl: pcInc={sig.pcInc ? 1 : 0} pcLoad={sig.pcLoad ? 1 : 0} irLoad=
               {sig.irLoad ? 1 : 0} rfWe={sig.rfWe ? 1 : 0} memWe={sig.memWe ? 1 : 0}{' '}
               memRead={sig.memRead ? 1 : 0}
             </span>
           </div>
-          <p className="text-xs text-muted-foreground">{t('cpu.datapathHint')}</p>
-          <DatapathCanvas state={dp} className="min-h-0 flex-1" />
+          <p className="shrink-0 text-xs text-muted-foreground">{t('cpu.datapathHint')}</p>
+          <DatapathCanvas
+            state={dp}
+            className="min-h-[280px] flex-1 sm:min-h-[360px]"
+          />
         </TabsContent>
 
-        <TabsContent value="asm" className="mt-2 grid min-h-0 flex-1 gap-3 data-[state=inactive]:hidden lg:grid-cols-2">
-          <div className="flex min-h-0 flex-col gap-2">
+        {/*
+          Small screens: document flow + page scroll (no competing flex-1 heights).
+          xl+: side-by-side panes with internal scroll.
+        */}
+        <TabsContent
+          value="asm"
+          className="mt-0 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto data-[state=inactive]:hidden xl:grid xl:grid-cols-2 xl:gap-3 xl:overflow-hidden"
+        >
+          <div className="flex shrink-0 flex-col gap-2 xl:h-full xl:min-h-0 xl:overflow-hidden">
             <div className="text-sm font-medium">{t('cpu.asm')}</div>
             <Textarea
-              className="min-h-[280px] flex-1 font-mono text-sm"
+              className="min-h-[160px] font-mono text-sm sm:min-h-[200px] xl:min-h-0 xl:flex-1"
               value={source}
               readOnly={readonly}
               onChange={(e) => setSource(e.target.value)}
               placeholder={t('cpu.asmPlaceholder')}
             />
             <div className="text-sm font-medium">{t('cpu.machineCode')}</div>
-            <pre className="max-h-40 overflow-auto rounded border bg-muted/40 p-2 font-mono text-xs">
+            <pre className="max-h-32 overflow-auto rounded border bg-muted/40 p-2 font-mono text-xs sm:max-h-40">
               {machineHex || t('cpu.noMachineCode')}
             </pre>
           </div>
 
-          <div className="flex min-h-0 flex-col gap-3 overflow-auto">
+          <div className="flex shrink-0 flex-col gap-3 pb-2 xl:h-full xl:min-h-0 xl:overflow-y-auto xl:pb-0">
             <div className="rounded border p-3">
               <div className="mb-2 text-sm font-medium">{t('cpu.control')}</div>
               <dl className="grid grid-cols-2 gap-x-4 gap-y-1 font-mono text-sm sm:grid-cols-3">
@@ -438,7 +451,7 @@ export function CpuDetailPage() {
 
             <div className="rounded border p-3">
               <div className="mb-2 text-sm font-medium">{t('cpu.registers')}</div>
-              <div className="grid grid-cols-4 gap-2 font-mono text-sm">
+              <div className="grid grid-cols-2 gap-2 font-mono text-sm sm:grid-cols-4">
                 {Array.from({ length: 8 }, (_, i) => (
                   <div key={i}>
                     R{i}=0x{hex2(dp.regs[i]!)}
@@ -451,7 +464,7 @@ export function CpuDetailPage() {
               <div className="mb-2 text-sm font-medium">
                 {t('cpu.memory')} (16×8)
               </div>
-              <pre className="overflow-auto font-mono text-xs leading-relaxed">
+              <pre className="overflow-x-auto font-mono text-xs leading-relaxed">
                 {memDumpTeaching(dp.mem, dp.pc)}
               </pre>
             </div>

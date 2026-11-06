@@ -447,7 +447,7 @@ function DatapathCanvasInner({ state, className }: Props) {
   }
 
   return (
-    <div className={cn('h-full min-h-[420px] rounded border', className)}>
+    <div className={cn('h-full min-h-[280px] rounded border sm:min-h-[360px]', className)}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
