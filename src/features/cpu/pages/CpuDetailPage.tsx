@@ -78,14 +78,25 @@ export function CpuDetailPage() {
   const [source, setSource] = useState('')
   const [dp, setDp] = useState<DatapathState>(() => createDatapathState())
   const [cpu, setCpu] = useState<CpuState>(() => createCpuState())
+  const dpRef = useRef(dp)
   const cpuRef = useRef(cpu)
+  dpRef.current = dp
   cpuRef.current = cpu
   const [compareOn, setCompareOn] = useState(true)
+  const compareOnRef = useRef(compareOn)
+  compareOnRef.current = compareOn
   const [machineHex, setMachineHex] = useState<string>('')
   const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [running, setRunning] = useState(false)
   const runTimer = useRef<number | null>(null)
+
+  const commitSim = useCallback((nextDp: DatapathState, nextCpu: CpuState) => {
+    dpRef.current = nextDp
+    cpuRef.current = nextCpu
+    setDp(nextDp)
+    setCpu(nextCpu)
+  }, [])
 
   const load = useCallback(async () => {
     if (!id) return
@@ -96,12 +107,11 @@ export function CpuDetailPage() {
     }
     setProgram(p)
     setSource(p.source)
-    setDp(createDatapathState())
-    setCpu(createCpuState())
+    commitSim(createDatapathState(), createCpuState())
     setMachineHex('')
     setStatus(null)
     setError(null)
-  }, [id, navigate])
+  }, [id, navigate, commitSim])
 
   useEffect(() => {
     void load()
@@ -164,8 +174,7 @@ export function CpuDetailPage() {
         result.highWater,
       )
       const nextCpu = resetCpu(loadMemory(createCpuState(), result.bytes, 0), true)
-      setDp(nextDp)
-      setCpu(nextCpu)
+      commitSim(nextDp, nextCpu)
       setStatus(t('cpu.loadedOk', { addr: '00' }))
     } catch (err) {
       setError(
@@ -185,13 +194,15 @@ export function CpuDetailPage() {
   }
 
   function onReset() {
-    setDp((s) => resetDatapath(s, true))
-    setCpu((s) => resetCpu(s, true))
+    const nextDp = resetDatapath(dpRef.current, true)
+    const nextCpu = resetCpu(cpuRef.current, true)
+    commitSim(nextDp, nextCpu)
     setError(null)
     stopRun()
   }
 
-  function advanceOnce(curDp: DatapathState, curCpu: CpuState): {
+  /** Pure step — no React setState; safe to call from interval / Strict Mode. */
+  function advanceOnce(curDp: DatapathState, curCpu: CpuState, doCompare: boolean): {
     dp: DatapathState
     cpu: CpuState
     error?: string
@@ -199,7 +210,7 @@ export function CpuDetailPage() {
     const r = stepDatapath(curDp)
     if (r.error) return { dp: r.state, cpu: curCpu, error: r.error }
     let nextCpu = curCpu
-    if (compareOn) {
+    if (doCompare) {
       const cr = stepCpu(curCpu)
       if (cr.error) {
         return {
@@ -219,10 +230,8 @@ export function CpuDetailPage() {
 
   function onStep() {
     setError(null)
-    const r = advanceOnce(dp, cpuRef.current)
-    setDp(r.dp)
-    setCpu(r.cpu)
-    cpuRef.current = r.cpu
+    const r = advanceOnce(dpRef.current, cpuRef.current, compareOnRef.current)
+    commitSim(r.dp, r.cpu)
     if (r.error) setError(t('cpu.runtimeError', { message: r.error }))
   }
 
@@ -234,31 +243,30 @@ export function CpuDetailPage() {
     setRunning(true)
     setError(null)
     runTimer.current = window.setInterval(() => {
-      setDp((s) => {
-        if (s.halted || s.phase === 'HALTED') {
-          stopRun()
-          return s
-        }
-        const r = advanceOnce(s, cpuRef.current)
-        setCpu(r.cpu)
-        cpuRef.current = r.cpu
-        if (r.error) {
-          setError(t('cpu.runtimeError', { message: r.error }))
-          stopRun()
-        }
-        if (r.dp.halted || r.dp.phase === 'HALTED') stopRun()
-        return r.dp
-      })
+      const curDp = dpRef.current
+      if (curDp.halted || curDp.phase === 'HALTED') {
+        stopRun()
+        return
+      }
+      // Advance via refs only — never inside setState updaters (Strict Mode double-invoke).
+      const r = advanceOnce(curDp, cpuRef.current, compareOnRef.current)
+      commitSim(r.dp, r.cpu)
+      if (r.error) {
+        setError(t('cpu.runtimeError', { message: r.error }))
+        stopRun()
+        return
+      }
+      if (r.dp.halted || r.dp.phase === 'HALTED') stopRun()
     }, 50)
   }
 
   function onRunToHalt() {
     setError(null)
-    let curDp = dp
+    let curDp = dpRef.current
     let curCpu = cpuRef.current
     for (let i = 0; i < 50_000; i += 1) {
       if (curDp.halted || curDp.phase === 'HALTED') break
-      const r = advanceOnce(curDp, curCpu)
+      const r = advanceOnce(curDp, curCpu, compareOnRef.current)
       curDp = r.dp
       curCpu = r.cpu
       if (r.error) {
@@ -266,9 +274,7 @@ export function CpuDetailPage() {
         break
       }
     }
-    setDp(curDp)
-    setCpu(curCpu)
-    cpuRef.current = curCpu
+    commitSim(curDp, curCpu)
   }
 
   if (!program) {
